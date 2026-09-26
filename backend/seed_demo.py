@@ -63,7 +63,6 @@ with app.app_context():
         ]
 
         candidates = [
-            users["ananya.demo@example.invalid"],
             users["rohan.demo@example.invalid"],
             users["maya.demo@example.invalid"],
         ]
@@ -75,7 +74,7 @@ with app.app_context():
             )
             db.session.add(
                 Submission(
-                    candidate_id=candidates[i % 3].id,
+                    candidate_id=candidates[i % len(candidates)].id,
                     lab=lab,
                     vulnerability=title,
                     category="Web Security",
@@ -107,15 +106,10 @@ with app.app_context():
                 )
             )
 
-    # Synthetic historical assessment results give each candidate a separate
-    # starting profile. Never overwrite results once a candidate has a score.
+    # Synthetic historical assessment results give other candidates baseline profiles.
+    # Ananya Rao (the primary demo candidate) intentionally has ZERO pre-seeded
+    # assessments so the tester starts completely clean from question #1.
     sample_scores = {
-        "ananya.demo@example.invalid": {
-            "Aptitude": 80,
-            "English & Security Communication": 90,
-            "Cybersecurity Fundamentals": 70,
-            "Ethical Hacking & Pentesting": 80,
-        },
         "rohan.demo@example.invalid": {
             "Aptitude": 60,
             "English & Security Communication": 70,
@@ -136,8 +130,21 @@ with app.app_context():
             if result is None:
                 db.session.add(AssessmentResult(candidate_id=candidate.id, section=section, percent=percent))
 
+    # Purge any existing assessment results, submissions, and secure assessment sessions
+    # for Ananya Rao so she always starts fresh from zero!
+    ananya = users.get("ananya.demo@example.invalid")
+    if ananya:
+        AssessmentResult.query.filter_by(candidate_id=ananya.id).delete()
+        Submission.query.filter_by(candidate_id=ananya.id).delete()
+        from app import SecureAssessment, SecureAssessmentEvent
+        old_sessions = [s.id for s in SecureAssessment.query.filter_by(candidate_id=ananya.id).all()]
+        if old_sessions:
+            SecureAssessmentEvent.query.filter(SecureAssessmentEvent.assessment_id.in_(old_sessions)).delete(synchronize_session=False)
+            SecureAssessment.query.filter(SecureAssessment.id.in_(old_sessions)).delete(synchronize_session=False)
+
     db.session.commit()
     print(
         "Synthetic demo accounts and findings are ready. "
-        "Demo accounts are ready; use the private password configured for the account's role."
+        "Primary demo candidate Ananya Rao is clean (0 assessments, 0 submissions). "
+        "Use the private password configured for the account's role."
     )

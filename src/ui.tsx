@@ -189,7 +189,7 @@ interface Lab {
 }
 
 const labs: Lab[] = [
-  { n: 'Broken Authentication', tag: 'WEB SECURITY', level: 'Intermediate', time: '35 min', desc: 'Test session handling and account controls in a purpose-built training app.', icon: LockKeyhole, color: 'coral', done: true },
+  { n: 'Broken Authentication', tag: 'WEB SECURITY', level: 'Intermediate', time: '35 min', desc: 'Test session handling and account controls in a purpose-built training app.', icon: LockKeyhole, color: 'coral', done: false },
   { n: 'API Authorization', tag: 'API SECURITY', level: 'Advanced', time: '50 min', desc: 'Trace object-level authorization boundaries across a mock API.', icon: Globe2, color: 'violet', done: false },
   { n: 'Network Enumeration', tag: 'NETWORK SECURITY', level: 'Beginner', time: '25 min', desc: 'Map services on an isolated, preconfigured training network.', icon: Waypoints, color: 'blue', done: false },
   { n: 'Reflected Cross-Site Scripting', tag: 'WEB SECURITY', level: 'Intermediate', time: '40 min', desc: 'Identify and validate unsafe output handling in a local target.', icon: ShieldAlert, color: 'amber', done: false },
@@ -372,11 +372,11 @@ export default function App() {
     { name: 'Cloud IAM Escalation', tag: 'Cloud', activeInstances: 2, status: 'HEALTHY', cpu: '11%', memory: '260MB', difficulty: 'Advanced' },
   ]);
 
-  // Reviewer Candidate Validation & Endorsement to Recruiter
-  const [passedCandidates, setPassedCandidates] = useState<string[]>(['Ananya Rao', 'Karan Shah']);
+  // Reviewer Candidate Validation & Endorsement to Recruiter (Clean slate for Ananya Rao)
+  const [passedCandidates, setPassedCandidates] = useState<string[]>(['Karan Shah']);
 
-  // Recruiter & Candidate Synchronized Scheduled Interviews State
-  const [savedCandidates, setSavedCandidates] = useState<string[]>(['Ananya Rao', 'Karan Shah']);
+  // Recruiter & Candidate Synchronized Scheduled Interviews State (Clean slate for Ananya Rao)
+  const [savedCandidates, setSavedCandidates] = useState<string[]>(['Karan Shah']);
   const [interviews, setInterviews] = useState<
     {
       id: string;
@@ -393,19 +393,6 @@ export default function App() {
       status: 'CONFIRMED' | 'PENDING' | 'DECLINED';
     }[]
   >([
-    {
-      id: 'INT-201',
-      candidate: 'Ananya Rao',
-      company: 'FREQUENCY / Jordan Davis',
-      role: 'Application Security Engineer',
-      type: 'Technical Defense Deep Dive (Zoom)',
-      mode: 'online',
-      date: 'Oct 02, 2026',
-      time: '14:00 IST',
-      message: 'We reviewed your verified API authorization findings and would love to talk about your validation and remediation approach.',
-      zoomUrl: 'https://us05web.zoom.us/myhome',
-      status: 'CONFIRMED',
-    },
     {
       id: 'INT-202',
       candidate: 'Karan Shah',
@@ -433,6 +420,43 @@ export default function App() {
     time: '14:00 IST',
     message: 'We reviewed your verified lab findings and would love to hear how you approached validation and remediation.',
   });
+
+  const resetDemoState = async () => {
+    try {
+      await fetch(`${API_BASE}/api/demo/reset`, { method: 'POST' });
+    } catch {}
+    try {
+      Object.keys(localStorage).forEach(key => {
+        if (key.startsWith('proofforge.')) localStorage.removeItem(key);
+      });
+    } catch {}
+    setAssessmentSubmitted(false);
+    setSelectedAnswers({});
+    setCurrentQIndex(0);
+    setAssessmentTimeLeft(1200);
+    setAssessmentSyncStatus('none');
+    setCandidateProgress(null);
+    setServerAssessmentResults([]);
+    setAssessmentFinalized(false);
+    setPassedCandidates(['Karan Shah']);
+    setInterviews([
+      {
+        id: 'INT-202',
+        candidate: 'Karan Shah',
+        company: 'CloudGuard Operations / Jordan Davis',
+        role: 'Security Operations & Recon Engineer',
+        type: 'On-Site Whiteboard & Architecture Round (Office)',
+        mode: 'offline',
+        venue: 'FREQUENCY HQ, Tower B, Level 4, Tech Park, Indiranagar, Bengaluru · Conference Room 4B',
+        date: 'Oct 04, 2026',
+        time: '11:30 IST',
+        message: 'Strong performance on network reconnaissance and Nmap scans. Let’s discuss SOC workflows and hands-on defense in our lab.',
+        zoomUrl: '',
+        status: 'PENDING',
+      },
+    ]);
+    notify('Demo reset: Candidate started fresh with clean slate!');
+  };
 
   // Full 40-Question Assessment & 20-Min Timer State (Persistent across modal close/reopen)
   const [currentQIndex, setCurrentQIndex] = useState(0);
@@ -710,6 +734,7 @@ export default function App() {
         <header className="topbar">
           <div className="crumb">Workspace <ChevronRight size={13} /><strong>{page}</strong></div>
           <div className="top-actions">
+            <button className="button secondary signout-top" style={{ color: '#9a4c1e', fontWeight: 600 }} title="Reset demo state back to clean starting state from question #1" onClick={() => void resetDemoState()}><RotateCcw size={13} />Reset Demo</button>
             <div className="demo-chip"><span />{' '}DEMO ENVIRONMENT</div>
             <span className="signed-in-role">{role} workspace</span>
             <button className="button secondary signout-top" onClick={() => void signOut()}><LogOut size={14} />Sign out</button>
@@ -736,9 +761,9 @@ export default function App() {
               </div>
 
               {/* Active Zoom / Offline Interview Alert Banner */}
-              {interviews.filter(i => i.candidate === 'Ananya Rao').length > 0 && (
+              {interviews.filter(i => i.candidate === auth?.name).length > 0 && (
                 (() => {
-                  const myInv = interviews.filter(i => i.candidate === 'Ananya Rao')[0];
+                  const myInv = interviews.filter(i => i.candidate === auth?.name)[0];
                   const isOffline = myInv.mode === 'offline';
                   return (
                     <div className="banner reviewer" style={{ background: isOffline ? '#fbf8ee' : '#f0f7ee', borderColor: isOffline ? '#e8dcbe' : '#cde2c6', marginBottom: 17 }}>
@@ -785,10 +810,10 @@ export default function App() {
               )}
 
               <div className="metrics">
-                <Metric label="SECURITY CAPABILITY" value={candidateProgress ? String(candidateProgress.overall_capability) : '—'} unit="/ 100" trend={candidateProgress ? 'Based on your verified proof' : 'Loading your proof profile'} icon={<Activity />} tone="peach" />
-                <Metric label="PROOF CONFIDENCE" value={candidateProgress ? String(candidateProgress.proof_confidence) : '—'} unit="%" trend="Calculated for this account" icon={<ShieldCheck />} tone="mint" />
-                <Metric label="VERIFIED FINDINGS" value={candidateProgress ? String(candidateProgress.verified_findings) : '—'} unit="" trend={candidateProgress ? `${candidateProgress.total_submitted} total submitted` : 'Loading your findings'} icon={<FileCheck2 />} tone="lavender" />
-                <Metric label="FINDING ACCURACY" value={candidateProgress ? String(candidateProgress.finding_accuracy) : '—'} unit="%" trend="Calculated for this account" icon={<Target />} tone="cream" />
+                <Metric label="SECURITY CAPABILITY" value={candidateProgress && candidateProgress.overall_capability > 0 ? String(candidateProgress.overall_capability) : '0'} unit="/ 100" trend={candidateProgress && candidateProgress.overall_capability > 0 ? 'Based on your verified proof' : 'Unrated · complete assessment to establish baseline'} icon={<Activity />} tone="peach" />
+                <Metric label="PROOF CONFIDENCE" value={candidateProgress && candidateProgress.proof_confidence > 0 ? String(candidateProgress.proof_confidence) : '0'} unit="%" trend="Calculated from verified work" icon={<ShieldCheck />} tone="mint" />
+                <Metric label="VERIFIED FINDINGS" value={candidateProgress ? String(candidateProgress.verified_findings) : '0'} unit="" trend={candidateProgress ? `${candidateProgress.total_submitted} total submitted` : '0 total submitted'} icon={<FileCheck2 />} tone="lavender" />
+                <Metric label="FINDING ACCURACY" value={candidateProgress && candidateProgress.finding_accuracy > 0 ? String(candidateProgress.finding_accuracy) : '0'} unit="%" trend="Calculated from reviewer evaluations" icon={<Target />} tone="cream" />
               </div>
 
               <div className="grid-two">
@@ -798,7 +823,7 @@ export default function App() {
                     <button className="text-link" onClick={() => doNav('Security Labs')}>All labs <ArrowRight size={14} /></button>
                   </div>
                   <div className="lab-list">
-                    {labs.slice(0, 3).map((l, i) => (
+                    {labs.slice(0, 3).map((l) => (
                       <div className="lab-row" key={l.n}>
                         <div className={`lab-icon ${l.color}`}><l.icon size={17} /></div>
                         <div className="lab-info">
@@ -807,7 +832,7 @@ export default function App() {
                           <span>{l.level} <i>·</i> {l.time}</span>
                         </div>
                         <button
-                          className={`round-action ${i === 0 ? 'done' : ''}`}
+                          className={`round-action ${l.done ? 'done' : ''}`}
                           onClick={() => { setLab(l.n); setModal('lab'); }}
                           aria-label={`Open ${l.n} lab`}
                         >
@@ -824,9 +849,18 @@ export default function App() {
                     <button className="more-button" onClick={() => doNav('Proof Profile')} aria-label="View proof profile"><MoreHorizontal size={18} /></button>
                   </div>
                   <div className="chain">
-                    <ChainItem icon={<FlaskConical />} title="Authentication lab completed" meta="Broken Authentication · 2 days ago" status="Complete" tone="mint" />
-                    <ChainItem icon={<FileCheck2 />} title="Evidence reviewed" meta="Session fixation finding" status="Verified" tone="mint" />
-                    <ChainItem icon={<FileText />} title="Report submitted" meta="Access control · awaiting review" status="In review" tone="amber" />
+                    {(candidateProgress?.total_submitted ?? 0) > 0 ? (
+                      <>
+                        <ChainItem icon={<FlaskConical />} title="Lab exercise completed" meta="Authorized target" status="Complete" tone="mint" />
+                        <ChainItem icon={<FileCheck2 />} title="Evidence submitted" meta="Awaiting reviewer rubric" status="In review" tone="amber" />
+                      </>
+                    ) : (
+                      <div className="objective-box" style={{ textAlign: 'center', padding: '16px 10px', margin: '4px 0' }}>
+                        <ShieldCheck size={18} style={{ color: '#7a8c75', margin: '0 auto 6px', display: 'block' }} />
+                        <strong style={{ fontSize: 11.5 }}>PROOF CHAIN READY · 0 ENTRIES</strong>
+                        <p style={{ fontSize: 11, margin: '3px 0 0' }}>Complete authorized security labs or take the timed technical assessment to generate verified proof records.</p>
+                      </div>
+                    )}
                   </div>
                   <button className="button secondary full" onClick={() => doNav('Findings')}>View all findings <ArrowRight size={15} /></button>
                 </div>
@@ -1207,10 +1241,10 @@ export default function App() {
                     <button className="button secondary" onClick={() => notify('Profile link copied')}>Share profile <ArrowUpRight size={14} /></button>
                   </div>
                   <div className="profile-stats">
-                    <div><strong>{candidateProgress?.overall_capability ?? '—'}</strong><span>Capability score</span></div>
-                    <div><strong>{candidateProgress ? `${candidateProgress.proof_confidence}%` : '—'}</strong><span>Proof confidence</span></div>
-                    <div><strong>{candidateProgress?.verified_findings ?? '—'}</strong><span>Verified findings</span></div>
-                    <div><strong>{candidateProgress ? `${candidateProgress.finding_accuracy}%` : '—'}</strong><span>Finding accuracy</span></div>
+                    <div><strong>{candidateProgress && candidateProgress.overall_capability > 0 ? candidateProgress.overall_capability : '0'}</strong><span>Capability score</span></div>
+                    <div><strong>{candidateProgress && candidateProgress.proof_confidence > 0 ? `${candidateProgress.proof_confidence}%` : '0%'}</strong><span>Proof confidence</span></div>
+                    <div><strong>{candidateProgress?.verified_findings ?? 0}</strong><span>Verified findings</span></div>
+                    <div><strong>{candidateProgress && candidateProgress.finding_accuracy > 0 ? `${candidateProgress.finding_accuracy}%` : '0%'}</strong><span>Finding accuracy</span></div>
                   </div>
                   <div className="proof-metrics"><span><b>{defenseEvaluated ? defenseScore : '—'}</b> technical defense score</span><span><b>2</b> reviewed false positives</span><span><b>1</b> duplicate evidence flag</span><span><b>90</b> report quality</span></div>
                   <div className="skills-row">
@@ -1222,12 +1256,22 @@ export default function App() {
                   <SecurityDna dna={activeCandidate.dna} confidence={candidateProgress?.proof_confidence ?? activeCandidate.confidence} />
                   <ProofChainGraph defenseScore={defenseEvaluated ? defenseScore : activeCandidate.defense} verified={verified} />
                   <h3 className="subsection-title">Verified finding portfolio</h3>
-                  <Finding name="Broken Access Control" severity="HIGH" lab="API Authorization Lab" verified={verified} onClick={() => setModal('finding')} />
-                  <Finding name="Session Fixation" severity="MEDIUM" lab="Broken Authentication Lab" verified onClick={() => setModal('finding')} />
+                  {(candidateProgress?.verified_findings ?? 0) > 0 ? (
+                    <>
+                      <Finding name="Broken Access Control" severity="HIGH" lab="API Authorization Lab" verified={verified} onClick={() => setModal('finding')} />
+                      <Finding name="Session Fixation" severity="MEDIUM" lab="Broken Authentication Lab" verified onClick={() => setModal('finding')} />
+                    </>
+                  ) : (
+                    <div className="objective-box" style={{ textAlign: 'center', padding: '22px 14px', margin: '8px 0' }}>
+                      <FileCheck2 size={20} style={{ color: '#7a8c75', margin: '0 auto 6px', display: 'block' }} />
+                      <strong style={{ fontSize: 12 }}>NO VERIFIED FINDINGS YET</strong>
+                      <p style={{ fontSize: 11, margin: '3px 0 0' }}>Submit reproduction steps and evidence from authorized labs. Scored and verified findings will be permanently recorded here.</p>
+                    </div>
+                  )}
                 </div>
               ) : page === 'Interviews' ? (
                 (() => {
-                  const myInterviews = interviews.filter((i) => i.candidate === 'Ananya Rao');
+                  const myInterviews = interviews.filter((i) => i.candidate === auth.name);
                   return (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
                       <div className="banner reviewer" style={{ background: '#f0f6ee', borderColor: '#cfe1cb' }}>
@@ -1450,30 +1494,41 @@ export default function App() {
                   </div>
 
                   {/* Candidate Assessment Alert */}
-                  <div className="rev-assess-banner">
-                    <div>
-                      <strong>CANDIDATE ASSESSMENT COMPLETED · AWAITING FINALIZATION</strong>
-                      <p style={{ margin: '3px 0 0', fontSize: 11, color: '#4d6148' }}>
-                        Ananya Rao completed the 40-question technical assessment (Auto-score: 36/40 · 90%). Verify domain breakdown and finalize.
-                      </p>
+                  {assessmentSubmitted ? (
+                    <div className="rev-assess-banner">
+                      <div>
+                        <strong>CANDIDATE ASSESSMENT COMPLETED · AWAITING FINALIZATION</strong>
+                        <p style={{ margin: '3px 0 0', fontSize: 11, color: '#4d6148' }}>
+                          Ananya Rao completed the 40-question technical assessment. Verify domain breakdown and finalize.
+                        </p>
+                      </div>
+                      <button
+                        className="button primary"
+                        style={{ fontSize: 10, padding: '7px 11px' }}
+                        onClick={() => setModal('review-assessment')}
+                      >
+                        <ShieldCheck size={13} /> {assessmentFinalized ? 'View Certified Assessment' : 'Finalize & Certify Score'}
+                      </button>
                     </div>
-                    <button
-                      className="button primary"
-                      style={{ fontSize: 10, padding: '7px 11px' }}
-                      onClick={() => setModal('review-assessment')}
-                    >
-                      <ShieldCheck size={13} /> {assessmentFinalized ? 'View Certified Assessment' : 'Finalize & Certify Score'}
-                    </button>
-                  </div>
+                  ) : (
+                    <div className="rev-assess-banner" style={{ background: '#f5f7f4', borderColor: '#dce3d7' }}>
+                      <div>
+                        <strong style={{ color: '#4d5c49' }}>ASSESSMENT PIPELINE · CANDIDATE READY</strong>
+                        <p style={{ margin: '3px 0 0', fontSize: 11, color: '#687764' }}>
+                          Candidate has not started the technical assessment yet. Real-time proctoring and score audit will appear here once submitted.
+                        </p>
+                      </div>
+                    </div>
+                  )}
 
                   <div className="panel">
                     <div className="panel-head">
                       <div><h2>Review queue</h2><p>Submissions ready for your rubric assessment</p></div>
                       <button className="text-link" onClick={() => doNav('Findings')}>View queue <ArrowRight size={14} /></button>
                     </div>
-                    <ReviewRow name="Ananya Rao" finding="Broken Access Control" lab="API Authorization Lab" time="2 hours ago" score="87" onClick={() => setModal('review')} />
+                    <ReviewRow name="Rohan Mehta" finding="Broken Access Control" lab="API Authorization Lab" time="2 hours ago" score="87" onClick={() => setModal('review')} />
                     <ReviewRow name="Karan Shah" finding="Reflected Cross-Site Scripting" lab="Reflected XSS Lab" time="4 hours ago" score="74" onClick={() => setModal('review')} />
-                    <ReviewRow name="Ananya Rao" finding="SQL Injection" lab="SQL Injection Lab" time="Yesterday" score="—" onClick={() => setModal('review')} />
+                    <ReviewRow name="Maya Iyer" finding="SQL Injection" lab="SQL Injection Lab" time="Yesterday" score="—" onClick={() => setModal('review')} />
                   </div>
                 </>
               )}
@@ -1529,9 +1584,9 @@ export default function App() {
                       <p>Inspect sanitized reproduction evidence, HTTP payloads, and execute rubric scoring.</p>
                     </div>
                   </div>
-                  <ReviewRow name="Ananya Rao" finding="Broken Access Control" lab="API Authorization Lab" time="2 hours ago" score="87" onClick={() => setModal('review')} />
+                  <ReviewRow name="Rohan Mehta" finding="Broken Access Control" lab="API Authorization Lab" time="2 hours ago" score="87" onClick={() => setModal('review')} />
                   <ReviewRow name="Karan Shah" finding="Reflected Cross-Site Scripting" lab="Reflected XSS Lab" time="4 hours ago" score="74" onClick={() => setModal('review')} />
-                  <ReviewRow name="Ananya Rao" finding="SQL Injection" lab="SQL Injection Lab" time="Yesterday" score="—" onClick={() => setModal('review')} />
+                  <ReviewRow name="Maya Iyer" finding="SQL Injection" lab="SQL Injection Lab" time="Yesterday" score="—" onClick={() => setModal('review')} />
                   <ReviewRow name="Devon Miles" finding="Insecure Direct Object Reference" lab="API Authorization Lab" time="1 day ago" score="91" onClick={() => setModal('review')} />
                 </div>
               )}
@@ -1548,41 +1603,47 @@ export default function App() {
                     </div>
 
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 8 }}>
-                      <div
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'space-between',
-                          padding: '12px 14px',
-                          border: '1px solid #e5e9e0',
-                          borderRadius: 8,
-                          background: '#fcfdfa',
-                        }}
-                      >
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                          <div className="avatar peach">AR</div>
-                          <div>
-                            <strong style={{ fontSize: 12 }}>Ananya Rao</strong>
-                            <p style={{ margin: '2px 0 0', fontSize: 10, color: '#7a8475' }}>
-                              40 Questions Completed in 14m 22s · Auto-Scored: 36 / 40 (90%)
-                            </p>
+                      {assessmentSubmitted ? (
+                        <div
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            padding: '12px 14px',
+                            border: '1px solid #e5e9e0',
+                            borderRadius: 8,
+                            background: '#fcfdfa',
+                          }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                            <div className="avatar peach">AR</div>
+                            <div>
+                              <strong style={{ fontSize: 12 }}>Ananya Rao</strong>
+                              <p style={{ margin: '2px 0 0', fontSize: 10, color: '#7a8475' }}>
+                                40 Questions Completed · Auto-Scored from Candidate Submission
+                              </p>
+                            </div>
+                          </div>
+
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                            {assessmentFinalized ? (
+                              <span className="verified-pill"><ShieldCheck size={12} /> CERTIFIED</span>
+                            ) : (
+                              <span className="status-pill">AWAITING FINALIZATION</span>
+                            )}
+                            <button
+                              className="button primary small-button"
+                              onClick={() => setModal('review-assessment')}
+                            >
+                              <Sliders size={12} /> {assessmentFinalized ? 'Edit Finalized Score' : 'Finalize Score'}
+                            </button>
                           </div>
                         </div>
-
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                          {assessmentFinalized ? (
-                            <span className="verified-pill"><ShieldCheck size={12} /> CERTIFIED (90%)</span>
-                          ) : (
-                            <span className="status-pill">AWAITING FINALIZATION</span>
-                          )}
-                          <button
-                            className="button primary small-button"
-                            onClick={() => setModal('review-assessment')}
-                          >
-                            <Sliders size={12} /> {assessmentFinalized ? 'Edit Finalized Score' : 'Finalize Score'}
-                          </button>
+                      ) : (
+                        <div className="objective-box" style={{ textAlign: 'center', padding: '16px 12px' }}>
+                          <p style={{ fontSize: 11, color: '#7a8475', margin: 0 }}>Candidate Ananya Rao has not submitted the technical assessment yet. Real-time auto-scores will appear here once submitted.</p>
                         </div>
-                      </div>
+                      )}
 
                       <div
                         style={{
