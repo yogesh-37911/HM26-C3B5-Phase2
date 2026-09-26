@@ -51,6 +51,7 @@ import {
   Terminal,
   Trash2,
   Trophy,
+  Upload,
   Video,
   Waypoints,
   X,
@@ -264,6 +265,67 @@ const NAV_ICONS: React.ElementType[] = [
   BriefcaseBusiness,
 ];
 
+export type CandidateDocItem = {
+  id: string;
+  candidateName: string;
+  candidateEmail: string;
+  title: string;
+  lab: string;
+  severity: 'Critical' | 'High' | 'Medium' | 'Low' | 'Informational';
+  category: string;
+  component: string;
+  description: string;
+  evidence: string;
+  reproduction: string;
+  impact: string;
+  recommendation: string;
+  fileName?: string;
+  fileSize?: string;
+  fileType?: 'pdf' | 'docx' | 'doc';
+  fileData?: string;
+  status: 'pending' | 'verified' | 'needs_changes' | 'rejected';
+  score?: number;
+  submittedAt: string;
+  reviewerFeedback?: string;
+  reviewedBy?: string;
+};
+
+const PAGE_ICON_MAP: Record<string, React.ElementType> = {
+  'Overview': Activity,
+  'Security Labs': FlaskConical,
+  'Labs': FlaskConical,
+  'Handbook': BookOpen,
+  'Toolbox': Terminal,
+  'Assessments': CircleHelp,
+  'Secure Assessments': Video,
+  'Findings': FileCheck2,
+  'Reports': FileText,
+  'Uploaded Documents': FileText,
+  'Reviews': ShieldCheck,
+  'Question Bank': CircleHelp,
+  'Flagged Findings': ShieldAlert,
+  'Rankings': Trophy,
+  'Proof Profile': ShieldCheck,
+  'Interviews': BriefcaseBusiness,
+  'Find Security Talent': Search,
+  'Security Profiles': ShieldCheck,
+  'Saved Candidates': BookmarkCheck,
+};
+
+// Valid minimal PDF Data URL for instant sample attachment testing
+const SAMPLE_PDF_BASE64 =
+  'data:application/pdf;base64,JVBERi0xLjQKJcTl8uXrp/Og0MTGCjQgMCBvYmoKPDwgL0xlbmd0aCAxMTAgL0ZpbHRlciAvRmxhdGVEZWNvZGUgPj4Kc3RyZWFtCnicK1QwVDBU0FWwsLQwtjCwVHBV8AlxFHA0VTDg4lIwVDC3MDHk5XJwVIg21TXUNDDVMzDRNTQ20DMx0TUy0zXUNTDWNTTV1TMw09M1MjHQBQD7/A1CCmVuZHN0cmVhbQplbmRvYmoKMiAwIG9iago8PCAvVHlwZSAvUGFnZSAvUGFyZW50IDMgMCBSIC9NZWRpYUJveCBbMCAwIDYxMiA3OTJdIC9Db250ZW50cyA0IDAgUiAvUmVzb3VyY2VzIDw8IC9Gb250IDw8IC9GMSA1IDAgUiA+PiA+PiA+PgplbmRvYmoKNSAwIG9iago8PCAvVHlwZSAvRm9udCAvU3VidHlwZSAvVHlwZTEgL0Jhc2VGb250IC9IZWx2ZXRpY2EgPj4KZW5kb2JqCjMgMCBvYmoKPDwgL1R5cGUgL1BhZ2VzIC9LaWRzIFsyIDAgUl0gL0NvdW50IDEgPj4KZW5kb2JqCjEgMCBvYmoKPDwgL1R5cGUgL0NhdGFsb2cgL1BhZ2VzIDMgMCBSID4+CmVuZG9iagp4cmVmCjAgNgowMDAwMDAwMDAwIDY1NTM1IGYgCjAwMDAwMDA0MDYgMDAwMDAgbiAKMDAwMDAwMDE5NCAwMDAwMCBuIAowMDAwMDAwMzUyIDAwMDAwIG4gCjAwMDAwMDAwMTUgMDAwMDAgbiAKMDAwMDAwMDI5OCAwMDAwMCBuIAp0cmFpbGVyCjw8IC9TaXplIDYgL1Jvb3QgMSAwIFIgPj4Kc3RhcnR4cmVmCjQ1NQolJUVPRgo=';
+
+function downloadDocumentFile(fileName: string, fileData: string) {
+  if (!fileData) return;
+  const link = document.createElement('a');
+  link.href = fileData;
+  link.download = fileName;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+}
+
 // ---------------------------------------------------------------------------
 // Main App Component
 // ---------------------------------------------------------------------------
@@ -283,8 +345,224 @@ export default function App() {
   const [toast, setToast] = useState('');
   const [query, setQuery] = useState('');
   const [lab, setLab] = useState('');
-  const [submitted, setSubmitted] = useState(false);
   const [verified, setVerified] = useState(false);
+
+  // Candidate Findings & Uploaded Pentest Reports (starts with 0 - completely clean slate)
+  const [candidateReports, setCandidateReports] = useState<CandidateDocItem[]>([]);
+  const [findingForm, setFindingForm] = useState({
+    title: 'Broken Access Control (BOLA)',
+    severity: 'High' as 'Critical' | 'High' | 'Medium' | 'Low' | 'Informational',
+    lab: 'API Authorization Lab',
+    component: 'GET /api/v1/users/{id}/profile',
+    description: 'Observed authorization bypass where user ID manipulation grants unauthorized access to cross-account records.',
+    evidence: 'GET /api/v1/users/42 HTTP/1.1\nHost: target-app.lab:8080\nAuthorization: Bearer [REDACTED]\n\nHTTP/1.1 200 OK\n{"id":42,"email":"victim@target.internal","role":"admin"}',
+    reproduction: '1. Authenticate with standard user credentials.\n2. Send request to /api/v1/users/42.\n3. Server returns full account data without checking ownership.',
+    impact: 'Unauthenticated/unauthorized users can exfiltrate sensitive profile data across accounts.',
+    recommendation: 'Implement server-side user ID claim validation against the active JWT session subject.',
+    fileName: '',
+    fileSize: '',
+    fileType: 'pdf' as 'pdf' | 'docx' | 'doc',
+    fileData: '',
+  });
+
+  // Reviewer Candidate Documents Queue (pre-seeded with non-Ananya candidates so reviewer has context, but 0 for Ananya)
+  const [reviewerDocuments, setReviewerDocuments] = useState<CandidateDocItem[]>([
+    {
+      id: 'DOC-101',
+      candidateName: 'Rohan Mehta',
+      candidateEmail: 'rohan.demo@example.invalid',
+      title: 'API Authorization & BOLA Security Assessment',
+      lab: 'API Authorization Lab',
+      severity: 'High',
+      category: 'Web Security',
+      component: 'GET /api/v1/orders/{order_id}',
+      description: 'Tested insecure direct object reference vulnerability permitting horizontal authorization bypass.',
+      evidence: 'GET /api/v1/orders/8841 HTTP/1.1 -> 200 OK (sanitized token)',
+      reproduction: '1. Injected alternate ID parameter. 2. Received unauthorized order payload.',
+      impact: 'Exposure of customer PII and purchasing records.',
+      recommendation: 'Bind account claim to database query filter on server.',
+      fileName: 'Rohan_Mehta_API_Authorization_Report.pdf',
+      fileSize: '342 KB',
+      fileType: 'pdf',
+      fileData: SAMPLE_PDF_BASE64,
+      status: 'verified',
+      score: 88,
+      submittedAt: '3 hours ago',
+      reviewerFeedback: 'Accurate classification, well-sanitized request headers, and reproducible curl commands.',
+      reviewedBy: 'Samira Khan',
+    },
+    {
+      id: 'DOC-102',
+      candidateName: 'Karan Shah',
+      candidateEmail: 'karan.demo@example.invalid',
+      title: 'Cross-Site Scripting (XSS) in Search Endpoint',
+      lab: 'Reflected XSS Lab',
+      severity: 'Medium',
+      category: 'Client-Side Security',
+      component: 'GET /search?q=',
+      description: 'Context-breaking script tag reflected in HTML response without output encoding.',
+      evidence: 'GET /search?q=%3Cscript%3E...%3C%2Fscript%3E',
+      reproduction: '1. Injected script tag into search query parameter.',
+      impact: 'Session token exfiltration and DOM manipulation on vulnerable client.',
+      recommendation: 'Context-aware contextual HTML entity encoding and strict CSP header.',
+      fileName: 'Karan_Shah_XSS_Audit_Report.docx',
+      fileSize: '215 KB',
+      fileType: 'docx',
+      fileData: SAMPLE_PDF_BASE64,
+      status: 'pending',
+      submittedAt: '5 hours ago',
+    },
+  ]);
+
+  // Reviewer Document Review Modal State
+  const [reviewingDoc, setReviewingDoc] = useState<CandidateDocItem | null>(null);
+  const [docReviewScore, setDocReviewScore] = useState<number>(88);
+  const [docReviewDecision, setDocReviewDecision] = useState<'verified' | 'needs_changes' | 'rejected'>('verified');
+  const [docReviewFeedback, setDocReviewFeedback] = useState<string>(
+    'Comprehensive methodology, clear reproduction steps, and sound remediation guidance.'
+  );
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const ext = file.name.split('.').pop()?.toLowerCase();
+    if (ext !== 'pdf' && ext !== 'doc' && ext !== 'docx') {
+      notify('Please upload a PDF (.pdf) or Word document (.doc, .docx)');
+      return;
+    }
+
+    const sizeKb = Math.round(file.size / 1024);
+    const sizeFormatted = sizeKb > 1024 ? `${(sizeKb / 1024).toFixed(1)} MB` : `${sizeKb} KB`;
+
+    const reader = new FileReader();
+    reader.onload = (uploadEvent) => {
+      const dataUrl = uploadEvent.target?.result as string;
+      setFindingForm((prev) => ({
+        ...prev,
+        fileName: file.name,
+        fileSize: sizeFormatted,
+        fileType: (ext === 'docx' ? 'docx' : ext === 'doc' ? 'doc' : 'pdf'),
+        fileData: dataUrl,
+      }));
+      notify(`Document attached: ${file.name} (${sizeFormatted})`);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const attachSampleReportPdf = () => {
+    setFindingForm((prev) => ({
+      ...prev,
+      fileName: `${(auth?.name || 'Candidate').replace(/\s+/g, '_')}_Penetration_Test_Report.pdf`,
+      fileSize: '248 KB',
+      fileType: 'pdf',
+      fileData: SAMPLE_PDF_BASE64,
+    }));
+    notify('Sample penetration test report PDF attached!');
+  };
+
+  const handleCandidateSubmitReport = async () => {
+    const docId = `DOC-${Math.floor(100 + Math.random() * 900)}`;
+    const newDoc: CandidateDocItem = {
+      id: docId,
+      candidateName: auth?.name || 'Ananya Rao',
+      candidateEmail: auth?.email || 'ananya.demo@example.invalid',
+      title: findingForm.title.trim() || 'Security Assessment Finding',
+      lab: findingForm.lab,
+      severity: findingForm.severity,
+      category: 'Web Security',
+      component: findingForm.component || 'Application Endpoint',
+      description: findingForm.description,
+      evidence: findingForm.evidence,
+      reproduction: findingForm.reproduction,
+      impact: findingForm.impact,
+      recommendation: findingForm.recommendation,
+      fileName: findingForm.fileName || `${(auth?.name || 'Candidate').replace(/\s+/g, '_')}_Security_Report.pdf`,
+      fileSize: findingForm.fileSize || '248 KB',
+      fileType: findingForm.fileType || 'pdf',
+      fileData: findingForm.fileData || SAMPLE_PDF_BASE64,
+      status: 'pending',
+      submittedAt: 'Just now',
+    };
+
+    setCandidateReports((prev) => [newDoc, ...prev]);
+    setReviewerDocuments((prev) => [newDoc, ...prev]);
+    setModal('');
+    notify('Report & document uploaded! Sent to Reviewer Panel for check.');
+
+    if (auth?.token) {
+      try {
+        await fetch(`${API_BASE}/api/documents`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${auth.token}` },
+          body: JSON.stringify({
+            title: newDoc.title,
+            lab: newDoc.lab,
+            severity: newDoc.severity,
+            doc_type: newDoc.fileType,
+            file_name: newDoc.fileName,
+            file_data: newDoc.fileData,
+            description: newDoc.description,
+          }),
+        });
+      } catch {}
+    }
+  };
+
+  const handleReviewerSubmitDocReview = async () => {
+    if (!reviewingDoc) return;
+    const updatedStatus = docReviewDecision;
+
+    setReviewerDocuments((prev) =>
+      prev.map((d) =>
+        d.id === reviewingDoc.id
+          ? {
+              ...d,
+              status: updatedStatus,
+              score: docReviewScore,
+              reviewerFeedback: docReviewFeedback,
+              reviewedBy: auth?.name || 'Samira Khan',
+            }
+          : d
+      )
+    );
+
+    setCandidateReports((prev) =>
+      prev.map((d) =>
+        d.id === reviewingDoc.id || d.title === reviewingDoc.title
+          ? {
+              ...d,
+              status: updatedStatus,
+              score: docReviewScore,
+              reviewerFeedback: docReviewFeedback,
+              reviewedBy: auth?.name || 'Samira Khan',
+            }
+          : d
+      )
+    );
+
+    if (updatedStatus === 'verified') {
+      setVerified(true);
+      setPassedCandidates((prev) => Array.from(new Set([...prev, reviewingDoc.candidateName])));
+    }
+
+    if (auth?.token && reviewingDoc.id && !isNaN(Number(reviewingDoc.id))) {
+      try {
+        await fetch(`${API_BASE}/api/documents/${reviewingDoc.id}/review`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${auth.token}` },
+          body: JSON.stringify({
+            score: docReviewScore,
+            decision: updatedStatus,
+            feedback: docReviewFeedback,
+          }),
+        });
+      } catch {}
+    }
+
+    setModal('');
+    notify(`Document evaluation saved (${docReviewScore}/100) — status: ${updatedStatus.toUpperCase()}`);
+  };
   const [minCapability, setMinCapability] = useState(80);
   const [minConfidence, setMinConfidence] = useState(80);
   const [minAccuracy, setMinAccuracy] = useState(85);
@@ -455,6 +733,24 @@ export default function App() {
         status: 'PENDING',
       },
     ]);
+    setCandidateReports([]);
+    setVerified(false);
+    setReviewerDocuments((prev) => prev.filter((d) => d.candidateName !== 'Ananya Rao' && d.candidateEmail !== 'ananya.demo@example.invalid'));
+    setFindingForm({
+      title: 'Broken Access Control (BOLA)',
+      severity: 'High',
+      lab: 'API Authorization Lab',
+      component: 'GET /api/v1/users/{id}/profile',
+      description: 'Observed authorization bypass where user ID manipulation grants unauthorized access to cross-account records.',
+      evidence: 'GET /api/v1/users/42 HTTP/1.1\nHost: target-app.lab:8080\nAuthorization: Bearer [REDACTED]\n\nHTTP/1.1 200 OK\n{"id":42,"email":"victim@target.internal","role":"admin"}',
+      reproduction: '1. Authenticate with standard user credentials.\n2. Send request to /api/v1/users/42.\n3. Server returns full account data without checking ownership.',
+      impact: 'Unauthenticated/unauthorized users can exfiltrate sensitive profile data across accounts.',
+      recommendation: 'Implement server-side user ID claim validation against the active JWT session subject.',
+      fileName: '',
+      fileSize: '',
+      fileType: 'pdf',
+      fileData: '',
+    });
     notify('Demo reset: Candidate started fresh with clean slate!');
   };
 
@@ -634,7 +930,7 @@ export default function App() {
     role === 'Candidate'
       ? ['Overview', 'Security Labs', 'Handbook', 'Toolbox', 'Assessments', 'Findings', 'Reports', 'Proof Profile', 'Interviews']
       : role === 'Reviewer'
-        ? ['Overview', 'Secure Assessments', 'Labs', 'Findings', 'Reviews', 'Question Bank', 'Flagged Findings', 'Rankings']
+        ? ['Overview', 'Secure Assessments', 'Labs', 'Findings', 'Uploaded Documents', 'Reviews', 'Question Bank', 'Flagged Findings', 'Rankings']
         : ['Overview', 'Find Security Talent', 'Security Profiles', 'Saved Candidates', 'Interviews'];
 
   const doNav = (s: string) => {
@@ -708,12 +1004,14 @@ export default function App() {
         <p className="nav-label">WORKSPACE</p>
         <nav>
           {nav.map((x, i) => {
-            const Icon = NAV_ICONS[Math.min(i, NAV_ICONS.length - 1)];
+            const Icon = PAGE_ICON_MAP[x] || NAV_ICONS[Math.min(i, NAV_ICONS.length - 1)];
             return (
               <button key={x} className={`nav-item ${page === x ? 'active' : ''}`} onClick={() => doNav(x)}>
                 <Icon />
                 <span>{x}</span>
-                {x === 'Findings' && <b className="nav-count">{role === 'Reviewer' ? '4' : '2'}</b>}
+                {x === 'Findings' && <b className="nav-count">{role === 'Reviewer' ? '4' : String(candidateReports.length)}</b>}
+                {x === 'Uploaded Documents' && <b className="nav-count">{String(reviewerDocuments.filter(d => d.status === 'pending').length)}</b>}
+                {x === 'Reports' && <b className="nav-count">{String(candidateReports.length)}</b>}
               </button>
             );
           })}
@@ -812,7 +1110,7 @@ export default function App() {
               <div className="metrics">
                 <Metric label="SECURITY CAPABILITY" value={candidateProgress && candidateProgress.overall_capability > 0 ? String(candidateProgress.overall_capability) : '0'} unit="/ 100" trend={candidateProgress && candidateProgress.overall_capability > 0 ? 'Based on your verified proof' : 'Unrated · complete assessment to establish baseline'} icon={<Activity />} tone="peach" />
                 <Metric label="PROOF CONFIDENCE" value={candidateProgress && candidateProgress.proof_confidence > 0 ? String(candidateProgress.proof_confidence) : '0'} unit="%" trend="Calculated from verified work" icon={<ShieldCheck />} tone="mint" />
-                <Metric label="VERIFIED FINDINGS" value={candidateProgress ? String(candidateProgress.verified_findings) : '0'} unit="" trend={candidateProgress ? `${candidateProgress.total_submitted} total submitted` : '0 total submitted'} icon={<FileCheck2 />} tone="lavender" />
+                <Metric label="VERIFIED FINDINGS" value={String(candidateReports.filter(r => r.status === 'verified').length)} unit="" trend={candidateReports.length > 0 ? `${candidateReports.length} total submitted` : '0 total submitted'} icon={<FileCheck2 />} tone="lavender" />
                 <Metric label="FINDING ACCURACY" value={candidateProgress && candidateProgress.finding_accuracy > 0 ? String(candidateProgress.finding_accuracy) : '0'} unit="%" trend="Calculated from reviewer evaluations" icon={<Target />} tone="cream" />
               </div>
 
@@ -849,10 +1147,10 @@ export default function App() {
                     <button className="more-button" onClick={() => doNav('Proof Profile')} aria-label="View proof profile"><MoreHorizontal size={18} /></button>
                   </div>
                   <div className="chain">
-                    {(candidateProgress?.total_submitted ?? 0) > 0 ? (
+                    {(candidateProgress?.total_submitted ?? 0) > 0 || candidateReports.length > 0 ? (
                       <>
                         <ChainItem icon={<FlaskConical />} title="Lab exercise completed" meta="Authorized target" status="Complete" tone="mint" />
-                        <ChainItem icon={<FileCheck2 />} title="Evidence submitted" meta="Awaiting reviewer rubric" status="In review" tone="amber" />
+                        <ChainItem icon={<FileCheck2 />} title={candidateReports[0]?.title || 'Evidence submitted'} meta={candidateReports[0]?.status === 'verified' ? 'Verified by reviewer' : 'Awaiting reviewer rubric'} status={candidateReports[0]?.status === 'verified' ? 'Complete' : 'In review'} tone={candidateReports[0]?.status === 'verified' ? 'mint' : 'amber'} />
                       </>
                     ) : (
                       <div className="objective-box" style={{ textAlign: 'center', padding: '16px 10px', margin: '4px 0' }}>
@@ -1256,16 +1554,25 @@ export default function App() {
                   <SecurityDna dna={activeCandidate.dna} confidence={candidateProgress?.proof_confidence ?? activeCandidate.confidence} />
                   <ProofChainGraph defenseScore={defenseEvaluated ? defenseScore : activeCandidate.defense} verified={verified} />
                   <h3 className="subsection-title">Verified finding portfolio</h3>
-                  {(candidateProgress?.verified_findings ?? 0) > 0 ? (
-                    <>
-                      <Finding name="Broken Access Control" severity="HIGH" lab="API Authorization Lab" verified={verified} onClick={() => setModal('finding')} />
-                      <Finding name="Session Fixation" severity="MEDIUM" lab="Broken Authentication Lab" verified onClick={() => setModal('finding')} />
-                    </>
+                  {candidateReports.filter((r) => r.status === 'verified').length > 0 ? (
+                    candidateReports
+                      .filter((r) => r.status === 'verified')
+                      .map((item) => (
+                        <div key={item.id} style={{ marginBottom: 8 }}>
+                          <Finding
+                            name={item.title}
+                            severity={item.severity.toUpperCase()}
+                            lab={`${item.lab} · verified by reviewer`}
+                            verified={true}
+                            onClick={() => setModal('finding')}
+                          />
+                        </div>
+                      ))
                   ) : (
                     <div className="objective-box" style={{ textAlign: 'center', padding: '22px 14px', margin: '8px 0' }}>
                       <FileCheck2 size={20} style={{ color: '#7a8c75', margin: '0 auto 6px', display: 'block' }} />
                       <strong style={{ fontSize: 12 }}>NO VERIFIED FINDINGS YET</strong>
-                      <p style={{ fontSize: 11, margin: '3px 0 0' }}>Submit reproduction steps and evidence from authorized labs. Scored and verified findings will be permanently recorded here.</p>
+                      <p style={{ fontSize: 11, margin: '3px 0 0' }}>Submit reproduction steps and evidence from authorized labs or upload a pentest report. Scored and verified findings will be permanently recorded here.</p>
                     </div>
                   )}
                 </div>
@@ -1388,14 +1695,91 @@ export default function App() {
                 <div className="panel">
                   <div className="panel-head">
                     <div>
-                      <h2>{page === 'Reports' ? 'Pentest reports' : 'Your submissions'}</h2>
-                      <p>Evidence, reproduction and reviewer decisions in one place.</p>
+                      <h2>{page === 'Reports' ? 'Security & Pentest Reports' : 'Vulnerability Findings & Reports'}</h2>
+                      <p>Sanitized evidence, uploaded PDF/Word test reports, reproduction proofs, and reviewer audit verdicts.</p>
                     </div>
-                    <button className="button primary small-button" onClick={() => setModal('finding')}><Plus size={14} />New finding</button>
+                    <button className="button primary small-button" onClick={() => setModal('finding')}>
+                      <Plus size={14} /> {page === 'Reports' ? 'Upload report' : 'New finding / report'}
+                    </button>
                   </div>
-                  <Finding name="Broken Access Control" severity="HIGH" lab="API Authorization Lab · submitted 2 hours ago" verified={verified} onClick={() => setModal('finding')} />
-                  <Finding name="Session Fixation" severity="MEDIUM" lab="Broken Authentication Lab · verified by reviewer" verified onClick={() => setModal('finding')} />
-                  {submitted && <Finding name="Reflected XSS" severity="MEDIUM" lab="Reflected XSS Lab · awaiting review" verified={false} onClick={() => setModal('finding')} />}
+
+                  {candidateReports.length === 0 ? (
+                    <div className="objective-box" style={{ textAlign: 'center', padding: '36px 16px', margin: '14px 0' }}>
+                      <FileText size={32} style={{ color: '#7a8c75', margin: '0 auto 10px', display: 'block' }} />
+                      <strong style={{ fontSize: 13, color: '#273824' }}>NO REPORTS OR FINDINGS SUBMITTED YET</strong>
+                      <p style={{ fontSize: 11.5, margin: '6px 0 16px', color: '#687564', maxWidth: 480, marginInline: 'auto' }}>
+                        Evidence, reproduction and reviewer decisions will appear here. Complete an interactive lab or upload your penetration testing report (PDF or Word document) for human reviewer check.
+                      </p>
+                      <button className="button primary" onClick={() => setModal('finding')}>
+                        <Plus size={14} /> Submit Finding &amp; Upload Report (PDF / Word)
+                      </button>
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 10 }}>
+                      {candidateReports.map((item) => (
+                        <div
+                          key={item.id}
+                          style={{
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: 8,
+                            padding: '12px 14px',
+                            border: '1px solid #e2e6de',
+                            borderRadius: 8,
+                            background: '#fcfdfa',
+                          }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                              <div className="finding-icon"><FileCheck2 size={16} /></div>
+                              <div>
+                                <strong style={{ fontSize: 12, color: '#243422' }}>{item.title}</strong>
+                                <p style={{ margin: '2px 0 0', fontSize: 10, color: '#737e6f' }}>
+                                  {item.lab} · {item.submittedAt}
+                                </p>
+                              </div>
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                              <span className={`severity ${item.severity.toLowerCase()}`}>{item.severity}</span>
+                              {item.status === 'verified' ? (
+                                <span className="verified-pill"><ShieldCheck size={12} /> VERIFIED ({item.score ?? 88}/100)</span>
+                              ) : item.status === 'needs_changes' ? (
+                                <span className="status-pill warning">NEEDS REVISIONS</span>
+                              ) : (
+                                <span className="status-pill">AWAITING REVIEWER CHECK</span>
+                              )}
+                            </div>
+                          </div>
+
+                          {item.fileName && (
+                            <div className="doc-attached-card" style={{ margin: '2px 0 0', padding: '7px 12px' }}>
+                              <div className="doc-attached-info">
+                                <span className={`doc-type-badge ${item.fileType || 'pdf'}`}>
+                                  {item.fileType?.toUpperCase() || 'PDF'}
+                                </span>
+                                <span style={{ fontSize: 11, fontWeight: 600, color: '#2c3c2a' }}>{item.fileName}</span>
+                                <span style={{ fontSize: 10, color: '#7a8677' }}>({item.fileSize})</span>
+                              </div>
+                              <button
+                                className="button secondary small-button"
+                                style={{ padding: '3px 8px', fontSize: 10 }}
+                                onClick={() => downloadDocumentFile(item.fileName!, item.fileData || '')}
+                              >
+                                <Download size={11} /> Download / View File
+                              </button>
+                            </div>
+                          )}
+
+                          {item.reviewerFeedback && (
+                            <div style={{ padding: '8px 12px', background: '#f5f9f3', borderRadius: 6, border: '1px solid #dbe8d7', fontSize: 11, color: '#335030' }}>
+                              <strong>Reviewer Audit Note:</strong> {item.reviewerFeedback}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
                   {defenseAsked && !defenseEvaluated && (
                     <div className="defense-request">
                       <div><Fingerprint size={16} /><strong>Technical defense requested</strong><span>Reviewer is checking how you validated this finding.</span></div>
@@ -1419,6 +1803,8 @@ export default function App() {
                     ? 'Lab container orchestration'
                     : page === 'Findings'
                     ? 'Candidate findings queue'
+                    : page === 'Uploaded Documents'
+                    ? 'Candidate uploaded documents & reports'
                     : page === 'Reviews'
                     ? 'Verified reviews & assessment audit'
                     : page === 'Question Bank'
@@ -1434,6 +1820,8 @@ export default function App() {
                     ? 'Manage synthetic vulnerable containers, telemetry, and instance resets.'
                     : page === 'Findings'
                     ? 'Evaluate sanitized evidence, proof chains, and candidate technical defenses.'
+                    : page === 'Uploaded Documents'
+                    ? 'Review, score, and certify uploaded candidate pentest reports (PDF & Word .docx).'
                     : page === 'Reviews'
                     ? 'Audit scored evaluations and certify automated candidate assessment results.'
                     : page === 'Question Bank'
@@ -1588,6 +1976,135 @@ export default function App() {
                   <ReviewRow name="Karan Shah" finding="Reflected Cross-Site Scripting" lab="Reflected XSS Lab" time="4 hours ago" score="74" onClick={() => setModal('review')} />
                   <ReviewRow name="Maya Iyer" finding="SQL Injection" lab="SQL Injection Lab" time="Yesterday" score="—" onClick={() => setModal('review')} />
                   <ReviewRow name="Devon Miles" finding="Insecure Direct Object Reference" lab="API Authorization Lab" time="1 day ago" score="91" onClick={() => setModal('review')} />
+                </div>
+              )}
+
+              {/* ── 3B. Uploaded Documents Audit ── */}
+              {page === 'Uploaded Documents' && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                  <div className="panel">
+                    <div className="panel-head">
+                      <div>
+                        <h2>Candidate Uploaded Reports &amp; Documents</h2>
+                        <p>Audit candidate pentest reports, methodology documents (PDF &amp; Word .docx), and record certified reviewer scoring.</p>
+                      </div>
+                      <div className="top-actions" style={{ gap: 6 }}>
+                        <span className="demo-chip" style={{ background: '#eaf4e6', color: '#255422', borderColor: '#c7dec0' }}>
+                          PDF &amp; WORD AUDIT
+                        </span>
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10, margin: '8px 0 14px' }}>
+                      <div className="result-card" style={{ padding: '10px 12px' }}>
+                        <span style={{ fontSize: 9, color: '#7a8675', fontFamily: 'DM Mono' }}>TOTAL UPLOADED</span>
+                        <strong style={{ fontSize: 20, color: '#1f2e1d', display: 'block', marginTop: 2 }}>{reviewerDocuments.length}</strong>
+                      </div>
+                      <div className="result-card" style={{ padding: '10px 12px' }}>
+                        <span style={{ fontSize: 9, color: '#b27524', fontFamily: 'DM Mono' }}>AWAITING REVIEW</span>
+                        <strong style={{ fontSize: 20, color: '#b27524', display: 'block', marginTop: 2 }}>
+                          {reviewerDocuments.filter((d) => d.status === 'pending').length}
+                        </strong>
+                      </div>
+                      <div className="result-card" style={{ padding: '10px 12px' }}>
+                        <span style={{ fontSize: 9, color: '#31632d', fontFamily: 'DM Mono' }}>VERIFIED &amp; CERTIFIED</span>
+                        <strong style={{ fontSize: 20, color: '#31632d', display: 'block', marginTop: 2 }}>
+                          {reviewerDocuments.filter((d) => d.status === 'verified').length}
+                        </strong>
+                      </div>
+                    </div>
+
+                    {reviewerDocuments.length === 0 ? (
+                      <div className="objective-box" style={{ textAlign: 'center', padding: '24px 12px' }}>
+                        <FileText size={24} style={{ color: '#7a8c75', margin: '0 auto 6px', display: 'block' }} />
+                        <strong style={{ fontSize: 12 }}>NO CANDIDATE DOCUMENTS UPLOADED YET</strong>
+                        <p style={{ fontSize: 11, color: '#7a8475', margin: '4px 0 0' }}>
+                          Uploaded PDF or Word documents from candidates will appear here for reviewer assessment and certification.
+                        </p>
+                      </div>
+                    ) : (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                        {reviewerDocuments.map((doc) => (
+                          <div key={doc.id} className="doc-review-card">
+                            <div className="doc-review-head">
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                                <div className={`avatar ${doc.candidateName.includes('Ananya') ? 'peach' : 'blue'}`}>
+                                  {doc.candidateName.split(' ').map((x) => x[0]).join('')}
+                                </div>
+                                <div>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                    <strong style={{ fontSize: 13, color: '#202f1d' }}>{doc.candidateName}</strong>
+                                    <span style={{ fontSize: 10, color: '#7a8677' }}>· {doc.lab}</span>
+                                  </div>
+                                  <h4 style={{ margin: '2px 0 0', fontSize: 12, fontWeight: 600, color: '#3a4a37' }}>
+                                    {doc.title}
+                                  </h4>
+                                </div>
+                              </div>
+
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                                <span className={`severity ${doc.severity.toLowerCase()}`}>{doc.severity}</span>
+                                {doc.status === 'verified' ? (
+                                  <span className="verified-pill"><ShieldCheck size={12} /> VERIFIED ({doc.score ?? 88}/100)</span>
+                                ) : doc.status === 'needs_changes' ? (
+                                  <span className="status-pill warning">NEEDS REVISIONS</span>
+                                ) : (
+                                  <span className="status-pill">AWAITING REVIEW</span>
+                                )}
+                              </div>
+                            </div>
+
+                            {doc.description && (
+                              <p style={{ margin: 0, fontSize: 11, color: '#566453', lineHeight: 1.5 }}>
+                                {doc.description}
+                              </p>
+                            )}
+
+                            {doc.fileName && (
+                              <div className="doc-attached-card" style={{ margin: 0 }}>
+                                <div className="doc-attached-info">
+                                  <span className={`doc-type-badge ${doc.fileType || 'pdf'}`}>
+                                    {doc.fileType?.toUpperCase() || 'PDF'}
+                                  </span>
+                                  <div>
+                                    <strong style={{ fontSize: 11.5, color: '#243422', display: 'block' }}>{doc.fileName}</strong>
+                                    <span style={{ fontSize: 10, color: '#7a8677' }}>Uploaded {doc.submittedAt} · {doc.fileSize}</span>
+                                  </div>
+                                </div>
+                                <div className="doc-review-actions">
+                                  <button
+                                    className="button secondary small-button"
+                                    onClick={() => downloadDocumentFile(doc.fileName!, doc.fileData || '')}
+                                    title="View or download document"
+                                  >
+                                    <Download size={12} /> Download / View
+                                  </button>
+                                  <button
+                                    className="button primary small-button"
+                                    onClick={() => {
+                                      setReviewingDoc(doc);
+                                      setDocReviewScore(doc.score ?? 88);
+                                      setDocReviewDecision(doc.status === 'verified' ? 'verified' : 'verified');
+                                      setDocReviewFeedback(doc.reviewerFeedback || 'Comprehensive methodology, clear reproduction steps, and sound remediation guidance.');
+                                      setModal('review-document');
+                                    }}
+                                  >
+                                    <Sliders size={12} /> {doc.status === 'verified' ? 'Edit Evaluation' : 'Review & Score'}
+                                  </button>
+                                </div>
+                              </div>
+                            )}
+
+                            {doc.reviewerFeedback && (
+                              <div style={{ padding: '8px 12px', background: '#f5f9f3', borderRadius: 6, border: '1px solid #dbe8d7', fontSize: 11, color: '#335030' }}>
+                                <strong>Reviewer Feedback ({doc.reviewedBy || 'Samira Khan'}):</strong> {doc.reviewerFeedback}
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
 
@@ -2710,7 +3227,9 @@ export default function App() {
                     : modal === 'profile'
                     ? `${lab} · verified profile`
                     : modal === 'finding'
-                    ? 'Finding evidence'
+                    ? 'Submit Finding & Upload Security Report'
+                    : modal === 'review-document'
+                    ? 'Review Candidate Document & Security Report'
                     : lab}
                 </h2>
               </div>
@@ -2770,24 +3289,151 @@ export default function App() {
             ) : modal === 'finding' ? (
               <>
                 <div className="form-grid">
-                  <label>Vulnerability
-                    <select><option>Broken Access Control</option><option>Reflected XSS</option><option>SQL Injection</option><option>Other</option></select>
+                  <label>Finding / Report Title
+                    <input
+                      value={findingForm.title}
+                      onChange={(e) => setFindingForm((prev) => ({ ...prev, title: e.target.value }))}
+                      placeholder="e.g. Broken Access Control (BOLA)"
+                    />
                   </label>
                   <label>Severity
-                    <select><option>High</option><option>Medium</option><option>Low</option></select>
+                    <select
+                      value={findingForm.severity}
+                      onChange={(e) => setFindingForm((prev) => ({ ...prev, severity: e.target.value as any }))}
+                    >
+                      <option>Critical</option>
+                      <option>High</option>
+                      <option>Medium</option>
+                      <option>Low</option>
+                      <option>Informational</option>
+                    </select>
                   </label>
-                  <label className="span-two">Affected component<input placeholder="e.g. GET /api/profile/{id}" /></label>
-                  <label className="span-two">Description<textarea placeholder="What did you observe? Describe the security behavior." /></label>
-                  <label className="span-two">Evidence &amp; reproduction<textarea placeholder="Sanitized request/response, steps to reproduce..." /></label>
-                  <label className="span-two">Impact &amp; recommendation<textarea placeholder="Who is affected? What server-side fix do you recommend?" /></label>
+                  <label>Target Security Lab
+                    <select
+                      value={findingForm.lab}
+                      onChange={(e) => setFindingForm((prev) => ({ ...prev, lab: e.target.value }))}
+                    >
+                      <option>API Authorization Lab</option>
+                      <option>Broken Authentication Lab</option>
+                      <option>Reflected XSS Lab</option>
+                      <option>SQL Injection Lab</option>
+                      <option>General Security Assessment</option>
+                    </select>
+                  </label>
+                  <label>Affected Component
+                    <input
+                      value={findingForm.component}
+                      onChange={(e) => setFindingForm((prev) => ({ ...prev, component: e.target.value }))}
+                      placeholder="e.g. GET /api/v1/users/{id}"
+                    />
+                  </label>
+                  <label className="span-two">Executive Summary &amp; Description
+                    <textarea
+                      value={findingForm.description}
+                      onChange={(e) => setFindingForm((prev) => ({ ...prev, description: e.target.value }))}
+                      placeholder="What did you observe? Describe the security behavior and affected assets."
+                    />
+                  </label>
+                  <label className="span-two">Evidence &amp; Reproduction Steps
+                    <textarea
+                      value={findingForm.evidence}
+                      onChange={(e) => setFindingForm((prev) => ({ ...prev, evidence: e.target.value }))}
+                      placeholder="Sanitized request/response payloads, steps to reproduce..."
+                    />
+                  </label>
+                  <label className="span-two">Business Impact &amp; Remediation Guidance
+                    <textarea
+                      value={findingForm.recommendation}
+                      onChange={(e) => setFindingForm((prev) => ({ ...prev, recommendation: e.target.value }))}
+                      placeholder="Who is affected? What server-side fix and defensive controls do you recommend?"
+                    />
+                  </label>
                 </div>
-                <div className="objective-box">
-                  <strong>PROOF CHAIN</strong>
-                  <p>Evidence is hashed for duplicate detection. A reviewer verifies every finding before it appears on your profile.</p>
+
+                {/* ── Document Upload Zone (PDF / Word) ── */}
+                <div style={{ marginTop: 14 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                    <strong style={{ fontSize: 11, color: '#273824', letterSpacing: '0.4px', textTransform: 'uppercase' }}>
+                      Attach Security Report Document (PDF or Word)
+                    </strong>
+                    <span style={{ fontSize: 10, color: '#7a8675' }}>
+                      Formats: .pdf, .docx, .doc (Max 25 MB)
+                    </span>
+                  </div>
+
+                  {!findingForm.fileName ? (
+                    <label className="doc-upload-zone">
+                      <input
+                        type="file"
+                        accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                        style={{ display: 'none' }}
+                        onChange={handleFileUpload}
+                      />
+                      <Upload size={22} style={{ color: '#4a7e41' }} />
+                      <strong style={{ fontSize: 12, color: '#263823' }}>
+                        Click to browse or drop your PDF / Word report here
+                      </strong>
+                      <span style={{ fontSize: 11, color: '#687564' }}>
+                        Reviewers will inspect this document directly in the reviewer audit console
+                      </span>
+                      <button
+                        type="button"
+                        className="button secondary small-button"
+                        style={{ marginTop: 6, fontSize: 10, padding: '4px 10px' }}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          attachSampleReportPdf();
+                        }}
+                      >
+                        <FileText size={11} /> 📄 Use Sample Pentest Report PDF
+                      </button>
+                    </label>
+                  ) : (
+                    <div className="doc-attached-card">
+                      <div className="doc-attached-info">
+                        <span className={`doc-type-badge ${findingForm.fileType}`}>
+                          {findingForm.fileType.toUpperCase()} DOCUMENT
+                        </span>
+                        <div>
+                          <strong style={{ fontSize: 12, color: '#243422', display: 'block' }}>{findingForm.fileName}</strong>
+                          <span style={{ fontSize: 10, color: '#7a8677' }}>Ready to submit · {findingForm.fileSize}</span>
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <button
+                          type="button"
+                          className="button secondary small-button"
+                          onClick={() => downloadDocumentFile(findingForm.fileName, findingForm.fileData)}
+                        >
+                          <Download size={11} /> Preview
+                        </button>
+                        <button
+                          type="button"
+                          className="button secondary small-button"
+                          style={{ color: '#ba3726' }}
+                          onClick={() => setFindingForm((prev) => ({ ...prev, fileName: '', fileSize: '', fileData: '' }))}
+                        >
+                          <X size={12} /> Remove
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
+
+                <div className="objective-box" style={{ marginTop: 12 }}>
+                  <strong>AUDIT CHAIN ROUTING</strong>
+                  <p>When you click submit, your finding and attached document (PDF/Word) are immediately delivered to the Reviewer Panel for expert verification and scoring.</p>
+                </div>
+
                 <div className="modal-actions">
-                  <button className="button secondary" onClick={() => setModal('')}>Save draft</button>
-                  <button className="button primary" onClick={() => { setSubmitted(true); setModal(''); notify('Finding submitted to reviewer queue'); }}><FileCheck2 size={14} />Submit finding</button>
+                  <button className="button secondary" onClick={() => setModal('')}>Cancel</button>
+                  <button
+                    className="button primary"
+                    onClick={() => void handleCandidateSubmitReport()}
+                  >
+                    <FileCheck2 size={14} /> Upload &amp; Submit to Reviewer Panel
+                  </button>
                 </div>
               </>
             ) : modal === 'assessment' ? (
@@ -3170,6 +3816,120 @@ export default function App() {
                   </>
                 );
               })()
+            ) : modal === 'review-document' && reviewingDoc ? (
+              <>
+                <div className="review-summary" style={{ marginBottom: 12 }}>
+                  <div className={`avatar ${reviewingDoc.candidateName.includes('Ananya') ? 'peach' : 'blue'}`}>
+                    {reviewingDoc.candidateName.split(' ').map((x) => x[0]).join('')}
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <strong>{reviewingDoc.candidateName}</strong>
+                      <span className="demo-chip" style={{ fontSize: 9 }}>Candidate</span>
+                    </div>
+                    <p style={{ margin: '2px 0 0', fontSize: 11, color: '#687564' }}>
+                      {reviewingDoc.lab} · Uploaded {reviewingDoc.submittedAt}
+                    </p>
+                  </div>
+                  <span className={`severity ${reviewingDoc.severity.toLowerCase()}`}>
+                    {reviewingDoc.severity}
+                  </span>
+                </div>
+
+                <div className="objective-box">
+                  <strong>REPORT: {reviewingDoc.title}</strong>
+                  <p>{reviewingDoc.description || 'Candidate provided sanitized technical documentation and vulnerability reproduction steps.'}</p>
+                </div>
+
+                {reviewingDoc.fileName && (
+                  <div className="doc-attached-card" style={{ margin: '10px 0 14px' }}>
+                    <div className="doc-attached-info">
+                      <span className={`doc-type-badge ${reviewingDoc.fileType || 'pdf'}`}>
+                        {reviewingDoc.fileType?.toUpperCase() || 'PDF'}
+                      </span>
+                      <div>
+                        <strong style={{ fontSize: 12, color: '#243422' }}>{reviewingDoc.fileName}</strong>
+                        <span style={{ fontSize: 10, color: '#7a8677' }}>{reviewingDoc.fileSize} · Ready for review</span>
+                      </div>
+                    </div>
+                    <button
+                      className="button secondary small-button"
+                      onClick={() => downloadDocumentFile(reviewingDoc.fileName!, reviewingDoc.fileData || '')}
+                    >
+                      <Download size={12} /> Download / View Document
+                    </button>
+                  </div>
+                )}
+
+                <div className="form-grid" style={{ marginTop: 8 }}>
+                  <label className="span-two">
+                    Reviewer Rubric Score (0 – 100)
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 4 }}>
+                      <input
+                        type="range"
+                        min="0"
+                        max="100"
+                        value={docReviewScore}
+                        onChange={(e) => setDocReviewScore(parseInt(e.target.value, 10))}
+                        style={{ flex: 1 }}
+                      />
+                      <span style={{ font: '700 16px "DM Mono"', minWidth: 50, color: '#274b24' }}>
+                        {docReviewScore} / 100
+                      </span>
+                    </div>
+                  </label>
+
+                  <label className="span-two">
+                    Review Decision
+                    <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+                      <button
+                        type="button"
+                        className={`button ${docReviewDecision === 'verified' ? 'primary' : 'secondary'}`}
+                        style={{ flex: 1, fontSize: 11 }}
+                        onClick={() => setDocReviewDecision('verified')}
+                      >
+                        <ShieldCheck size={13} /> Verified &amp; Approved
+                      </button>
+                      <button
+                        type="button"
+                        className={`button ${docReviewDecision === 'needs_changes' ? 'primary' : 'secondary'}`}
+                        style={{ flex: 1, fontSize: 11, background: docReviewDecision === 'needs_changes' ? '#b27524' : undefined }}
+                        onClick={() => setDocReviewDecision('needs_changes')}
+                      >
+                        Needs Revisions
+                      </button>
+                      <button
+                        type="button"
+                        className={`button ${docReviewDecision === 'rejected' ? 'primary' : 'secondary'}`}
+                        style={{ flex: 1, fontSize: 11, background: docReviewDecision === 'rejected' ? '#a53625' : undefined }}
+                        onClick={() => setDocReviewDecision('rejected')}
+                      >
+                        Reject
+                      </button>
+                    </div>
+                  </label>
+
+                  <label className="span-two">
+                    Reviewer Audit Notes &amp; Feedback
+                    <textarea
+                      value={docReviewFeedback}
+                      onChange={(e) => setDocReviewFeedback(e.target.value)}
+                      placeholder="Detail your findings audit, evidence validation, and guidance for candidate capability record..."
+                      rows={3}
+                    />
+                  </label>
+                </div>
+
+                <div className="modal-actions" style={{ marginTop: 14 }}>
+                  <button className="button secondary" onClick={() => setModal('')}>Close</button>
+                  <button
+                    className="button primary"
+                    onClick={() => void handleReviewerSubmitDocReview()}
+                  >
+                    <Check size={14} /> Submit Document Review &amp; Certify
+                  </button>
+                </div>
+              </>
             ) : modal === 'review-assessment' ? (
               (() => {
                 const baseScore = 36; // 36/40

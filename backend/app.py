@@ -53,7 +53,7 @@ app.config.update(
     SECRET_KEY=os.getenv("FLASK_SECRET_KEY", secret_key),
     JWT_SECRET_KEY=secret_key,
     JWT_ACCESS_TOKEN_EXPIRES=timedelta(hours=4),
-    MAX_CONTENT_LENGTH=2 * 1024 * 1024,
+    MAX_CONTENT_LENGTH=25 * 1024 * 1024,
 )
 
 db.init_app(app)
@@ -122,6 +122,28 @@ class Submission(db.Model):
     status = db.Column(db.String(20), default="pending")
     score = db.Column(db.Integer)
     created = db.Column(db.DateTime, server_default=db.func.now())
+
+
+class CandidateDocument(db.Model):
+    """Uploaded penetration test and audit documents (PDF / Word) with reviewer evaluations."""
+    __tablename__ = "candidate_document"
+    id = db.Column(db.Integer, primary_key=True)
+    candidate_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, index=True)
+    candidate_name = db.Column(db.String(120), nullable=False)
+    title = db.Column(db.String(200), nullable=False)
+    lab = db.Column(db.String(120), default="General Security Assessment")
+    severity = db.Column(db.String(20), default="High")
+    doc_type = db.Column(db.String(20), nullable=False)  # "pdf", "docx", "doc"
+    file_name = db.Column(db.String(255), nullable=False)
+    file_size = db.Column(db.Integer, default=0)
+    file_data = db.Column(db.Text, nullable=False)  # Base64 data URL
+    description = db.Column(db.Text, default="")
+    status = db.Column(db.String(30), default="pending")  # "pending", "verified", "needs_changes", "rejected"
+    reviewer_score = db.Column(db.Integer, nullable=True)
+    reviewer_feedback = db.Column(db.Text, default="")
+    reviewed_by = db.Column(db.String(120), nullable=True)
+    reviewed_at = db.Column(db.DateTime, nullable=True)
+    created_at = db.Column(db.DateTime, server_default=db.func.now(), nullable=False)
 
 
 class DefenseQuestion(db.Model):
@@ -1817,6 +1839,173 @@ def socket_rtc_signal(data):
     socketio.emit("rtc_signal", payload, to=f"assessment:{assessment_id}", include_self=False)
 
 
+@app.post("/api/documents")
+@jwt_required()
+def upload_document():
+    """Upload a candidate security report document (PDF / Word)."""
+    user_id = _get_current_user_id()
+    if user_id is None:
+        return jsonify(error="Invalid authentication token."), 401
+    user = db.session.get(User, user_id)
+    if not user:
+        return jsonify(error="User not found."), 404
+
+    d = request.get_json(silent=True) or {}
+    title = (d.get("title") or "").strip()[:200]
+    file_name = (d.get("file_name") or "").strip()[:255]
+    file_data = d.get("file_data") or ""
+    doc_type = (d.get("doc_type") or "").strip().lower()
+    lab = (d.get("lab") or "Security Assessment").strip()[:120]
+    severity = (d.get("severity") or "High").strip()[:20]
+    description = (d.get("description") or "").strip()[:5000]
+
+    if not title or not file_name or not file_data:
+        return jsonify(error="Title, file name, and file data are required."), 400
+
+    if doc_type not in ("pdf", "docx", "doc"):
+        ext = file_name.rsplit(".", 1)[-1].lower() if "." in file_name else ""
+        if ext in ("pdf", "docx", "doc"):
+            doc_type = ext
+        else:
+            return jsonify(error="Only PDF (.pdf) and Word documents (.doc, .docx) are supported."), 400
+
+    file_size = int(d.get("file_size") or (len(file_data) * 3 // 4))
+
+    doc = CandidateDocument(
+        candidate_id=user.id,
+        candidate_name=user.name,
+        title=_strip_html(title),
+        lab=_strip_html(lab),
+        severity=_strip_html(severity),
+        doc_type=doc_type,
+        file_name=_strip_html(file_name),
+        file_size=file_size,
+        file_data=file_data,
+        description=_strip_html(description),
+        status="pending",
+    )
+    db.session.add(doc)
+    db.session.commit()
+
+    audit("document_uploaded", f"doc_id:{doc.id},name:{doc.file_name}")
+    return jsonify(
+        id=doc.id,
+        title=doc.title,
+        file_name=doc.file_name,
+        doc_type=doc.doc_type,
+        file_size=doc.file_size,
+        status=doc.status,
+        created_at=doc.created_at.isoformat() + "Z" if doc.created_at else None,
+        message="Document uploaded successfully and routed to reviewer queue."
+    ), 201
+
+
+@app.get("/api/documents")
+@jwt_required()
+def list_documents():
+    """List uploaded security documents. Candidates see their own; Reviewers & Recruiters see all."""
+    user_id = _get_current_user_id()
+    if user_id is None:
+        return jsonify(error="Invalid authentication token."), 401
+    user = db.session.get(User, user_id)
+    if not user:
+        return jsonify(error="User not found."), 404
+
+    query = CandidateDocument.query.order_by(CandidateDocument.created_at.desc())
+    if user.role == "candidate":
+        query = query.filter_by(candidate_id=user.id)
+
+    docs = query.limit(100).all()
+    return jsonify(
+        documents=[
+            {
+                "id": doc.id,
+                "candidate_id": doc.candidate_id,
+                "candidate_name": doc.candidate_name,
+                "title": doc.title,
+                "lab": doc.lab,
+                "severity": doc.severity,
+                "doc_type": doc.doc_type,
+                "file_name": doc.file_name,
+                "file_size": doc.file_size,
+                "description": doc.description,
+                "status": doc.status,
+                "reviewer_score": doc.reviewer_score,
+                "reviewer_feedback": doc.reviewer_feedback,
+                "reviewed_by": doc.reviewed_by,
+                "reviewed_at": doc.reviewed_at.isoformat() + "Z" if doc.reviewed_at else None,
+                "created_at": doc.created_at.isoformat() + "Z" if doc.created_at else None,
+            }
+            for doc in docs
+        ]
+    )
+
+
+@app.get("/api/documents/<int:doc_id>/content")
+@jwt_required()
+def get_document_content(doc_id: int):
+    """Retrieve full file data for viewing or downloading."""
+    user_id = _get_current_user_id()
+    if user_id is None:
+        return jsonify(error="Invalid authentication token."), 401
+    user = db.session.get(User, user_id)
+    if not user:
+        return jsonify(error="User not found."), 404
+
+    doc = db.session.get(CandidateDocument, doc_id)
+    if not doc:
+        return jsonify(error="Document not found."), 404
+    if user.role == "candidate" and doc.candidate_id != user.id:
+        return jsonify(error="Forbidden"), 403
+
+    return jsonify(
+        id=doc.id,
+        file_name=doc.file_name,
+        doc_type=doc.doc_type,
+        file_data=doc.file_data,
+        title=doc.title,
+    )
+
+
+@app.post("/api/documents/<int:doc_id>/review")
+@role_required("reviewer")
+def review_document(doc_id: int):
+    """Review and score an uploaded candidate document."""
+    doc = db.session.get(CandidateDocument, doc_id)
+    if not doc:
+        return jsonify(error="Document not found."), 404
+
+    d = request.get_json(silent=True) or {}
+    score = d.get("score")
+    decision = d.get("decision")  # "verified", "needs_changes", "rejected"
+    feedback = (d.get("feedback") or "").strip()[:2000]
+
+    if not isinstance(score, int) or not (0 <= score <= 100):
+        return jsonify(error="A score between 0 and 100 is required."), 400
+    if decision not in ("verified", "needs_changes", "rejected"):
+        return jsonify(error="Decision must be 'verified', 'needs_changes', or 'rejected'."), 400
+
+    reviewer_id = _get_current_user_id()
+    reviewer = db.session.get(User, reviewer_id) if reviewer_id else None
+
+    doc.reviewer_score = score
+    doc.status = decision
+    doc.reviewer_feedback = _strip_html(feedback)
+    doc.reviewed_by = reviewer.name if reviewer else "Reviewer"
+    doc.reviewed_at = datetime.utcnow()
+    db.session.commit()
+
+    audit("document_reviewed", f"doc_id:{doc.id},status:{doc.status},score:{score}")
+    return jsonify(
+        id=doc.id,
+        status=doc.status,
+        reviewer_score=doc.reviewer_score,
+        reviewer_feedback=doc.reviewer_feedback,
+        reviewed_by=doc.reviewed_by,
+        message="Review recorded successfully."
+    )
+
+
 @app.post("/api/demo/reset")
 def reset_demo_candidate():
     """Reset the primary demo candidate (Ananya Rao) data to a 100% clean initial state."""
@@ -1824,12 +2013,13 @@ def reset_demo_candidate():
     if ananya:
         AssessmentResult.query.filter_by(candidate_id=ananya.id).delete()
         Submission.query.filter_by(candidate_id=ananya.id).delete()
+        CandidateDocument.query.filter_by(candidate_id=ananya.id).delete()
         old_sessions = [s.id for s in SecureAssessment.query.filter_by(candidate_id=ananya.id).all()]
         if old_sessions:
             SecureAssessmentEvent.query.filter(SecureAssessmentEvent.assessment_id.in_(old_sessions)).delete(synchronize_session=False)
             SecureAssessment.query.filter(SecureAssessment.id.in_(old_sessions)).delete(synchronize_session=False)
         db.session.commit()
-    return jsonify(message="Primary demo candidate Ananya Rao reset to clean slate (0 assessments, 0 submissions).", status="clean")
+    return jsonify(message="Primary demo candidate Ananya Rao reset to clean slate (0 assessments, 0 submissions, 0 documents).", status="clean")
 
 
 # ---------------------------------------------------------------------------

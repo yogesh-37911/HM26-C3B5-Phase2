@@ -136,7 +136,8 @@ with app.app_context():
     if ananya:
         AssessmentResult.query.filter_by(candidate_id=ananya.id).delete()
         Submission.query.filter_by(candidate_id=ananya.id).delete()
-        from app import SecureAssessment, SecureAssessmentEvent
+        from app import CandidateDocument, SecureAssessment, SecureAssessmentEvent
+        CandidateDocument.query.filter_by(candidate_id=ananya.id).delete()
         old_sessions = [s.id for s in SecureAssessment.query.filter_by(candidate_id=ananya.id).all()]
         if old_sessions:
             SecureAssessmentEvent.query.filter(SecureAssessmentEvent.assessment_id.in_(old_sessions)).delete(synchronize_session=False)

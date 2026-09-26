@@ -484,3 +484,86 @@ body{background:#f4f4f0}
   font-weight: 600;
   font-family: 'DM Mono', monospace;
 }
+
+/* ── Candidate Document Upload & Reviewer Cards ── */
+.doc-upload-zone {
+  border: 2px dashed #c0d4bb;
+  background: #f7faf5;
+  border-radius: 8px;
+  padding: 18px 16px;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  user-select: none;
+}
+.doc-upload-zone:hover {
+  border-color: #4a7e41;
+  background: #eef6ec;
+}
+.doc-attached-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  border: 1px solid #cce0c7;
+  background: #f1f8ed;
+  border-radius: 7px;
+  margin-top: 8px;
+}
+.doc-attached-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.doc-type-badge {
+  font: 700 9px 'DM Mono', monospace;
+  letter-spacing: 0.5px;
+  padding: 2px 7px;
+  border-radius: 4px;
+  text-transform: uppercase;
+  display: inline-flex;
+  align-items: center;
+}
+.doc-type-badge.pdf {
+  background: #fbeae8;
+  color: #b82a20;
+  border: 1px solid #f6c0bb;
+}
+.doc-type-badge.docx, .doc-type-badge.doc {
+  background: #eaf1fb;
+  color: #1a56a6;
+  border: 1px solid #c2d6f4;
+}
+.doc-review-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid #e1e6dd;
+  background: #fcfdfa;
+  border-radius: 8px;
+  transition: all 0.15s ease;
+}
+.doc-review-card:hover {
+  border-color: #bcc9b7;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.03);
+}
+.doc-review-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.doc-review-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
