@@ -17,15 +17,15 @@ services:
       - key: JWT_SECRET_KEY
         generateValue: true
       - key: FRONTEND_ORIGIN
-        value: https://proofforge-cyber.onrender.com
+        value: "*"
       - key: SECURE_ASSESSMENT_REVIEWER_EMAIL
         value: samira.demo@example.invalid
       - key: STUN_URL
         value: stun:stun.l.google.com:19302
       - key: TURN_URL
-        sync: false
+        value: ""
       - key: TURN_SHARED_SECRET
-        sync: false
+        value: ""
       - key: RATELIMIT_STORAGE_URI
         value: memory://
       - key: DEMO_CANDIDATE_PASSWORD
@@ -44,11 +44,11 @@ services:
       - key: NODE_VERSION
         value: 22.16.0
       - key: VITE_API_BASE_URL
-        value: https://proofforge-api.onrender.com
+        value: https://proofforge-api-31cq.onrender.com
     headers:
       - path: /*
         name: Content-Security-Policy
-        value: "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; media-src 'self' blob:; connect-src 'self' https://proofforge-api.onrender.com wss://proofforge-api.onrender.com https://stun.l.google.com:19302 stun: turn: turns:; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
+        value: "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self' https://proofforge-api-31cq.onrender.com wss://proofforge-api-31cq.onrender.com https://*.onrender.com wss://*.onrender.com https://stun.l.google.com:19302 stun: turn: turns:; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
       - path: /*
         name: Permissions-Policy
         value: "camera=(self), microphone=(self), display-capture=(self), fullscreen=(self)"

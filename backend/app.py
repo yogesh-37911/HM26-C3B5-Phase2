@@ -746,6 +746,17 @@ def set_security_headers(response):
 # ---------------------------------------------------------------------------
 
 
+@app.get("/")
+def index():
+    """Root endpoint for status check."""
+    return jsonify(
+        status="ok",
+        service="ProofForge Cyber API",
+        version="1.0.0",
+        health_check="/api/health"
+    )
+
+
 @app.get("/api/health")
 def health():
     """Simple health check endpoint."""
