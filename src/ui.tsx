@@ -52,6 +52,9 @@ import {
   Trash2,
   Trophy,
   Upload,
+  UploadCloud,
+  FolderOpen,
+  RefreshCw,
   Video,
   Waypoints,
   X,
@@ -422,10 +425,21 @@ export default function App() {
     'Comprehensive methodology, clear reproduction steps, and sound remediation guidance.'
   );
 
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const [isDragging, setIsDragging] = useState(false);
+  // Dedicated State for Report Upload (Word / PDF) in Reports Section
+  const [reportForm, setReportForm] = useState({
+    title: '',
+    notes: '',
+    fileName: '',
+    fileSize: '',
+    fileType: 'pdf' as 'pdf' | 'doc' | 'docx',
+    fileData: '',
+  });
+  const [reportDragOver, setReportDragOver] = useState(false);
+  const [isUploadingReport, setIsUploadingReport] = useState(false);
+  const reportDragCounter = useRef(0);
+  const reportFileInputRef = useRef<HTMLInputElement>(null);
 
-  const processSelectedFile = (file: File) => {
+  const handleReportFileSelect = (file: File) => {
     if (!file) return;
 
     const ext = file.name.split('.').pop()?.toLowerCase() || '';
@@ -445,45 +459,128 @@ export default function App() {
     const reader = new FileReader();
     reader.onload = (uploadEvent) => {
       const dataUrl = uploadEvent.target?.result as string;
-      setFindingForm((prev) => ({
+      const cleanName = file.name.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' ');
+      const autoTitle = cleanName.charAt(0).toUpperCase() + cleanName.slice(1) + ' Report';
+      setReportForm((prev) => ({
         ...prev,
         fileName: file.name,
         fileSize: sizeFormatted,
         fileType: ext === 'docx' ? 'docx' : ext === 'doc' ? 'doc' : 'pdf',
         fileData: dataUrl,
+        title: prev.title.trim() ? prev.title : autoTitle,
       }));
-      notify(`Document attached: ${file.name} (${sizeFormatted})`);
+      notify(`Report document loaded: ${file.name} (${sizeFormatted})`);
     };
     reader.onerror = () => {
-      notify('Error reading file. Please try again.');
+      notify('Error reading file from disk. Please try again.');
     };
     reader.readAsDataURL(file);
   };
 
-  const handleDragOver = (e: React.DragEvent) => {
+  const onReportDragEnter = (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    if (!isDragging) setIsDragging(true);
+    reportDragCounter.current += 1;
+    setReportDragOver(true);
   };
 
-  const handleDragLeave = (e: React.DragEvent) => {
+  const onReportDragOver = (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    setIsDragging(false);
+    e.dataTransfer.dropEffect = 'copy';
+    if (!reportDragOver) setReportDragOver(true);
   };
 
-  const handleDrop = (e: React.DragEvent) => {
+  const onReportDragLeave = (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    setIsDragging(false);
-    const droppedFile = e.dataTransfer.files?.[0];
-    if (droppedFile) {
-      processSelectedFile(droppedFile);
+    reportDragCounter.current -= 1;
+    if (reportDragCounter.current <= 0) {
+      reportDragCounter.current = 0;
+      setReportDragOver(false);
     }
   };
 
-  const handleCandidateSubmitReport = async () => {
+  const onReportDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    reportDragCounter.current = 0;
+    setReportDragOver(false);
+    const droppedFile = e.dataTransfer.files?.[0];
+    if (droppedFile) {
+      handleReportFileSelect(droppedFile);
+    }
+  };
+
+  const handleUploadCandidateReport = async () => {
+    if (!reportForm.fileName || !reportForm.fileData) {
+      notify('Please select or drop a PDF or Word report to upload.');
+      return;
+    }
+
+    setIsUploadingReport(true);
+    const title = reportForm.title.trim() || reportForm.fileName;
     const docId = `DOC-${Math.floor(100 + Math.random() * 900)}`;
+
+    const newReport: CandidateDocItem = {
+      id: docId,
+      candidateName: auth?.name || 'Ananya Rao',
+      candidateEmail: auth?.email || 'ananya.demo@example.invalid',
+      title: title,
+      lab: 'Security & Pentest Assessment',
+      severity: 'Medium',
+      category: 'Assessment Report',
+      component: 'Full Scope Pentest Report',
+      description: reportForm.notes.trim() || `Candidate uploaded report: ${reportForm.fileName}`,
+      evidence: `Attached document: ${reportForm.fileName} (${reportForm.fileSize})`,
+      reproduction: 'Full testing methodology and proofs documented in the attached report file.',
+      impact: 'Security assessment findings and remediation roadmap.',
+      recommendation: 'See attached report document for comprehensive remediation guidance.',
+      fileName: reportForm.fileName,
+      fileSize: reportForm.fileSize,
+      fileType: reportForm.fileType,
+      fileData: reportForm.fileData,
+      status: 'pending',
+      submittedAt: 'Just now',
+    };
+
+    setCandidateReports((prev) => [newReport, ...prev]);
+    setReviewerDocuments((prev) => [newReport, ...prev]);
+
+    if (auth?.token) {
+      try {
+        await fetch(`${API_BASE}/api/documents`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${auth.token}` },
+          body: JSON.stringify({
+            title: newReport.title,
+            lab: newReport.lab,
+            severity: newReport.severity,
+            doc_type: newReport.fileType,
+            file_name: newReport.fileName,
+            file_data: newReport.fileData,
+            description: newReport.description,
+          }),
+        });
+      } catch (err) {
+        console.warn('Document server sync:', err);
+      }
+    }
+
+    setReportForm({
+      title: '',
+      notes: '',
+      fileName: '',
+      fileSize: '',
+      fileType: 'pdf',
+      fileData: '',
+    });
+    setIsUploadingReport(false);
+    notify(`Report "${title}" uploaded! Sent to Reviewer Panel.`);
+  };
+
+  const handleCandidateSubmitFinding = async () => {
+    const docId = `FIND-${Math.floor(100 + Math.random() * 900)}`;
     const newDoc: CandidateDocItem = {
       id: docId,
       candidateName: auth?.name || 'Ananya Rao',
@@ -498,10 +595,10 @@ export default function App() {
       reproduction: findingForm.reproduction,
       impact: findingForm.impact,
       recommendation: findingForm.recommendation,
-      fileName: findingForm.fileName || undefined,
-      fileSize: findingForm.fileSize || undefined,
-      fileType: findingForm.fileType || undefined,
-      fileData: findingForm.fileData || undefined,
+      fileName: undefined,
+      fileSize: undefined,
+      fileType: undefined,
+      fileData: undefined,
       status: 'pending',
       submittedAt: 'Just now',
     };
@@ -509,9 +606,9 @@ export default function App() {
     setCandidateReports((prev) => [newDoc, ...prev]);
     setReviewerDocuments((prev) => [newDoc, ...prev]);
     setModal('');
-    notify('Report & finding submitted! Sent to Reviewer Panel for check.');
+    notify(`Lab finding "${newDoc.title}" recorded! Sent to Reviewer Panel.`);
 
-    if (auth?.token && newDoc.fileName && newDoc.fileData) {
+    if (auth?.token) {
       try {
         await fetch(`${API_BASE}/api/documents`, {
           method: 'POST',
@@ -520,9 +617,7 @@ export default function App() {
             title: newDoc.title,
             lab: newDoc.lab,
             severity: newDoc.severity,
-            doc_type: newDoc.fileType,
-            file_name: newDoc.fileName,
-            file_data: newDoc.fileData,
+            doc_type: 'pdf',
             description: newDoc.description,
           }),
         });
@@ -767,6 +862,14 @@ export default function App() {
       reproduction: '1. Authenticate with standard user credentials.\n2. Send request to /api/v1/users/42.\n3. Server returns full account data without checking ownership.',
       impact: 'Unauthenticated/unauthorized users can exfiltrate sensitive profile data across accounts.',
       recommendation: 'Implement server-side user ID claim validation against the active JWT session subject.',
+      fileName: '',
+      fileSize: '',
+      fileType: 'pdf',
+      fileData: '',
+    });
+    setReportForm({
+      title: '',
+      notes: '',
       fileName: '',
       fileSize: '',
       fileType: 'pdf',
@@ -1030,9 +1133,9 @@ export default function App() {
               <button key={x} className={`nav-item ${page === x ? 'active' : ''}`} onClick={() => doNav(x)}>
                 <Icon />
                 <span>{x}</span>
-                {x === 'Findings' && <b className="nav-count">{role === 'Reviewer' ? '4' : String(candidateReports.length)}</b>}
+                {x === 'Findings' && <b className="nav-count">{role === 'Reviewer' ? '4' : String(candidateReports.filter(r => r.category !== 'Assessment Report').length)}</b>}
                 {x === 'Uploaded Documents' && <b className="nav-count">{String(reviewerDocuments.filter(d => d.status === 'pending').length)}</b>}
-                {x === 'Reports' && <b className="nav-count">{String(candidateReports.length)}</b>}
+                {x === 'Reports' && <b className="nav-count">{String(candidateReports.filter(r => r.category === 'Assessment Report' || r.fileName).length)}</b>}
               </button>
             );
           })}
@@ -1712,92 +1815,321 @@ export default function App() {
                     </div>
                   );
                 })()
+              ) : page === 'Reports' ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                  {/* ── Direct Report Upload Box (Drag & Drop or Select from Device) ── */}
+                  <div className="panel">
+                    <div className="panel-head">
+                      <div>
+                        <h2>Upload Pentest / Assessment Report</h2>
+                        <p>Upload your official penetration testing or security assessment report (PDF or Word document). The report is sent directly to the reviewer panel for audit.</p>
+                      </div>
+                      <div className="top-actions" style={{ gap: 6 }}>
+                        <span className="demo-chip" style={{ background: '#eaf4e6', color: '#255422', borderColor: '#c7dec0' }}>
+                          PDF &amp; WORD (.DOCX)
+                        </span>
+                      </div>
+                    </div>
+
+                    <input
+                      ref={reportFileInputRef}
+                      type="file"
+                      accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                      style={{ display: 'none' }}
+                      onChange={(e) => {
+                        const f = e.target.files?.[0];
+                        if (f) handleReportFileSelect(f);
+                        e.target.value = '';
+                      }}
+                    />
+
+                    {!reportForm.fileName ? (
+                      <div
+                        id="report-dropzone"
+                        className={`doc-upload-zone ${reportDragOver ? 'dragging' : ''}`}
+                        onDragEnter={onReportDragEnter}
+                        onDragOver={onReportDragOver}
+                        onDragLeave={onReportDragLeave}
+                        onDrop={onReportDrop}
+                        onClick={() => reportFileInputRef.current?.click()}
+                        style={{ padding: '36px 20px', cursor: 'pointer' }}
+                      >
+                        <div style={{ pointerEvents: 'none', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
+                          <div style={{
+                            width: 54,
+                            height: 54,
+                            borderRadius: '50%',
+                            background: reportDragOver ? '#d2ebd0' : '#eaf4e6',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            color: reportDragOver ? '#1f4e1c' : '#2d6a26',
+                            transition: 'all 0.2s',
+                          }}>
+                            <UploadCloud size={28} />
+                          </div>
+                          <strong style={{ fontSize: 13.5, color: reportDragOver ? '#1b4518' : '#223420' }}>
+                            {reportDragOver ? 'Drop your report file now' : 'Drag & drop your PDF or Word report here'}
+                          </strong>
+                          <p style={{ margin: 0, fontSize: 11.5, color: '#5f6f5b', maxWidth: 440, textAlign: 'center' }}>
+                            Supports official assessment reports in <b>.pdf</b>, <b>.docx</b>, or <b>.doc</b> (up to 25 MB).
+                          </p>
+                          <div style={{ marginTop: 4 }}>
+                            <button
+                              type="button"
+                              className="button primary"
+                              style={{ pointerEvents: 'auto' }}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                reportFileInputRef.current?.click();
+                              }}
+                            >
+                              <FolderOpen size={14} /> Select from device
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                        {/* Attached File Preview */}
+                        <div className="doc-attached-card" style={{ padding: '12px 16px' }}>
+                          <div className="doc-attached-info">
+                            <span className={`doc-type-badge ${reportForm.fileType}`}>
+                              {reportForm.fileType.toUpperCase()} REPORT
+                            </span>
+                            <div>
+                              <strong style={{ fontSize: 13, color: '#202f1d', display: 'block' }}>{reportForm.fileName}</strong>
+                              <span style={{ fontSize: 10.5, color: '#687765' }}>Ready for reviewer submission · {reportForm.fileSize}</span>
+                            </div>
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <button
+                              type="button"
+                              className="button secondary small-button"
+                              onClick={() => downloadDocumentFile(reportForm.fileName, reportForm.fileData)}
+                            >
+                              <Download size={12} /> Preview
+                            </button>
+                            <button
+                              type="button"
+                              className="button secondary small-button"
+                              style={{ color: '#ba3726', borderColor: '#f2c5be' }}
+                              onClick={() => setReportForm({ title: '', notes: '', fileName: '', fileSize: '', fileType: 'pdf', fileData: '' })}
+                            >
+                              <X size={12} /> Remove
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Minimal Report Metadata */}
+                        <div className="form-grid">
+                          <label className="span-two">
+                            Report Title
+                            <input
+                              value={reportForm.title}
+                              onChange={(e) => setReportForm((prev) => ({ ...prev, title: e.target.value }))}
+                              placeholder="e.g. Web Application Penetration Test Report"
+                            />
+                          </label>
+                          <label className="span-two">
+                            Executive Notes for Reviewer (Optional)
+                            <textarea
+                              value={reportForm.notes}
+                              onChange={(e) => setReportForm((prev) => ({ ...prev, notes: e.target.value }))}
+                              placeholder="Add scope details, target systems tested, or executive remarks for the reviewing evaluator..."
+                              style={{ minHeight: 64 }}
+                            />
+                          </label>
+                        </div>
+
+                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 4 }}>
+                          <button
+                            type="button"
+                            className="button secondary"
+                            onClick={() => setReportForm({ title: '', notes: '', fileName: '', fileSize: '', fileType: 'pdf', fileData: '' })}
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            type="button"
+                            className="button primary"
+                            disabled={isUploadingReport}
+                            onClick={handleUploadCandidateReport}
+                          >
+                            {isUploadingReport ? <RefreshCw size={14} className="spin" /> : <Upload size={14} />} Upload Report to Reviewer
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* ── Candidate's Uploaded Reports Queue ── */}
+                  <div className="panel">
+                    <div className="panel-head">
+                      <div>
+                        <h2>Uploaded Reports ({candidateReports.filter((r) => r.category === 'Assessment Report' || r.fileName).length})</h2>
+                        <p>Documents you uploaded and their reviewer audit and certification status.</p>
+                      </div>
+                    </div>
+
+                    {candidateReports.filter((r) => r.category === 'Assessment Report' || r.fileName).length === 0 ? (
+                      <div className="objective-box" style={{ textAlign: 'center', padding: '32px 16px', margin: '8px 0' }}>
+                        <FileText size={30} style={{ color: '#7a8c75', margin: '0 auto 8px', display: 'block' }} />
+                        <strong style={{ fontSize: 12.5, color: '#273824' }}>NO REPORTS UPLOADED YET</strong>
+                        <p style={{ fontSize: 11, margin: '4px 0 0', color: '#687564' }}>
+                          Drag and drop your penetration testing report (PDF or Word) above or click "Select from device" to upload.
+                        </p>
+                      </div>
+                    ) : (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 6 }}>
+                        {candidateReports
+                          .filter((r) => r.category === 'Assessment Report' || r.fileName)
+                          .map((item) => (
+                            <div
+                              key={item.id}
+                              style={{
+                                display: 'flex',
+                                flexDirection: 'column',
+                                gap: 8,
+                                padding: '12px 14px',
+                                border: '1px solid #e2e6de',
+                                borderRadius: 8,
+                                background: '#fcfdfa',
+                              }}
+                            >
+                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                                  <div className="finding-icon"><FileText size={16} /></div>
+                                  <div>
+                                    <strong style={{ fontSize: 12, color: '#243422' }}>{item.title}</strong>
+                                    <p style={{ margin: '2px 0 0', fontSize: 10, color: '#737e6f' }}>
+                                      Uploaded {item.submittedAt} · {item.description}
+                                    </p>
+                                  </div>
+                                </div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                                  {item.status === 'verified' ? (
+                                    <span className="verified-pill"><ShieldCheck size={12} /> VERIFIED ({item.score ?? 90}/100)</span>
+                                  ) : item.status === 'needs_changes' ? (
+                                    <span className="status-pill warning">NEEDS REVISIONS</span>
+                                  ) : (
+                                    <span className="status-pill">AWAITING REVIEWER CHECK</span>
+                                  )}
+                                </div>
+                              </div>
+
+                              {item.fileName && (
+                                <div className="doc-attached-card" style={{ margin: '2px 0 0', padding: '7px 12px' }}>
+                                  <div className="doc-attached-info">
+                                    <span className={`doc-type-badge ${item.fileType || 'pdf'}`}>
+                                      {item.fileType?.toUpperCase() || 'PDF'}
+                                    </span>
+                                    <span style={{ fontSize: 11, fontWeight: 600, color: '#2c3c2a' }}>{item.fileName}</span>
+                                    <span style={{ fontSize: 10, color: '#7a8677' }}>({item.fileSize})</span>
+                                  </div>
+                                  <button
+                                    className="button secondary small-button"
+                                    style={{ padding: '3px 8px', fontSize: 10 }}
+                                    onClick={() => downloadDocumentFile(item.fileName!, item.fileData || '')}
+                                  >
+                                    <Download size={11} /> Download / View File
+                                  </button>
+                                </div>
+                              )}
+
+                              {item.reviewerFeedback && (
+                                <div style={{ padding: '8px 12px', background: '#f5f9f3', borderRadius: 6, border: '1px solid #dbe8d7', fontSize: 11, color: '#335030' }}>
+                                  <strong>Reviewer Audit Note:</strong> {item.reviewerFeedback}
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
               ) : (
+                /* ── Findings Section (Lab Technical Findings) ── */
                 <div className="panel">
                   <div className="panel-head">
                     <div>
-                      <h2>{page === 'Reports' ? 'Security & Pentest Reports' : 'Vulnerability Findings & Reports'}</h2>
-                      <p>Sanitized evidence, uploaded PDF/Word test reports, reproduction proofs, and reviewer audit verdicts.</p>
+                      <h2>Vulnerability Findings &amp; Proofs</h2>
+                      <p>Technical vulnerability findings, reproduction proofs, and defenses recorded from authorized security labs.</p>
                     </div>
                     <button className="button primary small-button" onClick={() => setModal('finding')}>
-                      <Plus size={14} /> {page === 'Reports' ? 'Upload report' : 'New finding / report'}
+                      <Plus size={14} /> Record Lab Finding
                     </button>
                   </div>
 
-                  {candidateReports.length === 0 ? (
+                  {candidateReports.filter((r) => r.category !== 'Assessment Report').length === 0 ? (
                     <div className="objective-box" style={{ textAlign: 'center', padding: '36px 16px', margin: '14px 0' }}>
-                      <FileText size={32} style={{ color: '#7a8c75', margin: '0 auto 10px', display: 'block' }} />
-                      <strong style={{ fontSize: 13, color: '#273824' }}>NO REPORTS OR FINDINGS SUBMITTED YET</strong>
+                      <FileCheck2 size={32} style={{ color: '#7a8c75', margin: '0 auto 10px', display: 'block' }} />
+                      <strong style={{ fontSize: 13, color: '#273824' }}>NO LAB FINDINGS RECORDED YET</strong>
                       <p style={{ fontSize: 11.5, margin: '6px 0 16px', color: '#687564', maxWidth: 480, marginInline: 'auto' }}>
-                        Evidence, reproduction and reviewer decisions will appear here. Complete an interactive lab or upload your penetration testing report (PDF or Word document) for human reviewer check.
+                        Start an authorized Security Lab and record observed vulnerabilities, reproduction proofs, and remediation recommendations.
                       </p>
                       <button className="button primary" onClick={() => setModal('finding')}>
-                        <Plus size={14} /> Submit Finding &amp; Upload Report (PDF / Word)
+                        <Plus size={14} /> Record Lab Finding
                       </button>
                     </div>
                   ) : (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 10 }}>
-                      {candidateReports.map((item) => (
-                        <div
-                          key={item.id}
-                          style={{
-                            display: 'flex',
-                            flexDirection: 'column',
-                            gap: 8,
-                            padding: '12px 14px',
-                            border: '1px solid #e2e6de',
-                            borderRadius: 8,
-                            background: '#fcfdfa',
-                          }}
-                        >
-                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                              <div className="finding-icon"><FileCheck2 size={16} /></div>
-                              <div>
-                                <strong style={{ fontSize: 12, color: '#243422' }}>{item.title}</strong>
-                                <p style={{ margin: '2px 0 0', fontSize: 10, color: '#737e6f' }}>
-                                  {item.lab} · {item.submittedAt}
-                                </p>
+                      {candidateReports
+                        .filter((r) => r.category !== 'Assessment Report')
+                        .map((item) => (
+                          <div
+                            key={item.id}
+                            style={{
+                              display: 'flex',
+                              flexDirection: 'column',
+                              gap: 8,
+                              padding: '12px 14px',
+                              border: '1px solid #e2e6de',
+                              borderRadius: 8,
+                              background: '#fcfdfa',
+                            }}
+                          >
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                                <div className="finding-icon"><FileCheck2 size={16} /></div>
+                                <div>
+                                  <strong style={{ fontSize: 12, color: '#243422' }}>{item.title}</strong>
+                                  <p style={{ margin: '2px 0 0', fontSize: 10, color: '#737e6f' }}>
+                                    {item.lab} · {item.submittedAt}
+                                  </p>
+                                </div>
+                              </div>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                                <span className={`severity ${item.severity.toLowerCase()}`}>{item.severity}</span>
+                                {item.status === 'verified' ? (
+                                  <span className="verified-pill"><ShieldCheck size={12} /> VERIFIED ({item.score ?? 88}/100)</span>
+                                ) : item.status === 'needs_changes' ? (
+                                  <span className="status-pill warning">NEEDS REVISIONS</span>
+                                ) : (
+                                  <span className="status-pill">AWAITING REVIEWER CHECK</span>
+                                )}
                               </div>
                             </div>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                              <span className={`severity ${item.severity.toLowerCase()}`}>{item.severity}</span>
-                              {item.status === 'verified' ? (
-                                <span className="verified-pill"><ShieldCheck size={12} /> VERIFIED ({item.score ?? 88}/100)</span>
-                              ) : item.status === 'needs_changes' ? (
-                                <span className="status-pill warning">NEEDS REVISIONS</span>
-                              ) : (
-                                <span className="status-pill">AWAITING REVIEWER CHECK</span>
-                              )}
-                            </div>
+
+                            {item.component && (
+                              <div style={{ fontSize: 11, color: '#4a5746', background: '#f5f7f3', padding: '4px 8px', borderRadius: 4, fontFamily: 'DM Mono' }}>
+                                <strong>Target:</strong> {item.component}
+                              </div>
+                            )}
+
+                            {item.description && (
+                              <p style={{ margin: 0, fontSize: 11, color: '#556351' }}>
+                                {item.description}
+                              </p>
+                            )}
+
+                            {item.reviewerFeedback && (
+                              <div style={{ padding: '8px 12px', background: '#f5f9f3', borderRadius: 6, border: '1px solid #dbe8d7', fontSize: 11, color: '#335030' }}>
+                                <strong>Reviewer Audit Note:</strong> {item.reviewerFeedback}
+                              </div>
+                            )}
                           </div>
-
-                          {item.fileName && (
-                            <div className="doc-attached-card" style={{ margin: '2px 0 0', padding: '7px 12px' }}>
-                              <div className="doc-attached-info">
-                                <span className={`doc-type-badge ${item.fileType || 'pdf'}`}>
-                                  {item.fileType?.toUpperCase() || 'PDF'}
-                                </span>
-                                <span style={{ fontSize: 11, fontWeight: 600, color: '#2c3c2a' }}>{item.fileName}</span>
-                                <span style={{ fontSize: 10, color: '#7a8677' }}>({item.fileSize})</span>
-                              </div>
-                              <button
-                                className="button secondary small-button"
-                                style={{ padding: '3px 8px', fontSize: 10 }}
-                                onClick={() => downloadDocumentFile(item.fileName!, item.fileData || '')}
-                              >
-                                <Download size={11} /> Download / View File
-                              </button>
-                            </div>
-                          )}
-
-                          {item.reviewerFeedback && (
-                            <div style={{ padding: '8px 12px', background: '#f5f9f3', borderRadius: 6, border: '1px solid #dbe8d7', fontSize: 11, color: '#335030' }}>
-                              <strong>Reviewer Audit Note:</strong> {item.reviewerFeedback}
-                            </div>
-                          )}
-                        </div>
-                      ))}
+                        ))}
                     </div>
                   )}
 
@@ -3248,7 +3580,7 @@ export default function App() {
                     : modal === 'profile'
                     ? `${lab} · verified profile`
                     : modal === 'finding'
-                    ? 'Submit Finding & Upload Security Report'
+                    ? 'Record Lab Security Finding'
                     : modal === 'review-document'
                     ? 'Review Candidate Document & Security Report'
                     : lab}
@@ -3309,12 +3641,17 @@ export default function App() {
               </>
             ) : modal === 'finding' ? (
               <>
+                <div className="banner compact">
+                  <div className="banner-icon"><FlaskConical size={17} /></div>
+                  <div><strong>RECORD LAB SECURITY FINDING</strong><p>Record reproduction steps, affected component, and evidence from your authorized lab environment.</p></div>
+                </div>
+
                 <div className="form-grid">
-                  <label>Finding / Report Title
+                  <label>Finding Title
                     <input
                       value={findingForm.title}
                       onChange={(e) => setFindingForm((prev) => ({ ...prev, title: e.target.value }))}
-                      placeholder="e.g. Broken Access Control (BOLA)"
+                      placeholder="e.g. Broken Object Level Authorization (BOLA)"
                     />
                   </label>
                   <label>Severity
@@ -3341,11 +3678,11 @@ export default function App() {
                       <option>General Security Assessment</option>
                     </select>
                   </label>
-                  <label>Affected Component
+                  <label>Affected Component / Endpoint
                     <input
                       value={findingForm.component}
                       onChange={(e) => setFindingForm((prev) => ({ ...prev, component: e.target.value }))}
-                      placeholder="e.g. GET /api/v1/users/{id}"
+                      placeholder="e.g. GET /api/v1/users/{id}/profile"
                     />
                   </label>
                   <label className="span-two">Executive Summary &amp; Description
@@ -3371,89 +3708,18 @@ export default function App() {
                   </label>
                 </div>
 
-                {/* ── Document Upload Zone (PDF / Word) ── */}
-                <div style={{ marginTop: 14 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
-                    <strong style={{ fontSize: 11, color: '#273824', letterSpacing: '0.4px', textTransform: 'uppercase' }}>
-                      Attach Security Report Document (PDF or Word)
-                    </strong>
-                    <span style={{ fontSize: 10, color: '#7a8675' }}>
-                      Formats: .pdf, .docx, .doc (Max 25 MB)
-                    </span>
-                  </div>
-
-                  {!findingForm.fileName ? (
-                    <div
-                      className={`doc-upload-zone ${isDragging ? 'dragging' : ''}`}
-                      onDragOver={handleDragOver}
-                      onDragEnter={handleDragOver}
-                      onDragLeave={handleDragLeave}
-                      onDrop={handleDrop}
-                      onClick={() => fileInputRef.current?.click()}
-                    >
-                      <input
-                        ref={fileInputRef}
-                        type="file"
-                        accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                        style={{ display: 'none' }}
-                        onChange={(e) => {
-                          const f = e.target.files?.[0];
-                          if (f) processSelectedFile(f);
-                          e.target.value = '';
-                        }}
-                      />
-                      <Upload size={28} style={{ color: isDragging ? '#1e481b' : '#3d6f35' }} />
-                      <strong style={{ fontSize: 13, color: isDragging ? '#1e481b' : '#263823' }}>
-                        {isDragging ? 'Drop your PDF or Word document here!' : 'Drag & drop your PDF or Word document here'}
-                      </strong>
-                      <span style={{ fontSize: 11, color: '#5e6c59' }}>
-                        Or click to browse from your computer (Accepts .pdf, .docx, .doc up to 25 MB)
-                      </span>
-                    </div>
-                  ) : (
-                    <div className="doc-attached-card">
-                      <div className="doc-attached-info">
-                        <span className={`doc-type-badge ${findingForm.fileType}`}>
-                          {findingForm.fileType.toUpperCase()} DOCUMENT
-                        </span>
-                        <div>
-                          <strong style={{ fontSize: 12, color: '#243422', display: 'block' }}>{findingForm.fileName}</strong>
-                          <span style={{ fontSize: 10, color: '#7a8677' }}>Ready to submit · {findingForm.fileSize}</span>
-                        </div>
-                      </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <button
-                          type="button"
-                          className="button secondary small-button"
-                          onClick={() => downloadDocumentFile(findingForm.fileName, findingForm.fileData)}
-                        >
-                          <Download size={11} /> Preview / Download
-                        </button>
-                        <button
-                          type="button"
-                          className="button secondary small-button"
-                          style={{ color: '#ba3726' }}
-                          onClick={() => setFindingForm((prev) => ({ ...prev, fileName: '', fileSize: '', fileData: '' }))}
-                        >
-                          <X size={12} /> Remove
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-
                 <div className="objective-box" style={{ marginTop: 12 }}>
-                  <strong>AUDIT CHAIN ROUTING</strong>
-                  <p>When you click submit, your finding and attached document (PDF/Word) are immediately delivered to the Reviewer Panel for expert verification and scoring.</p>
+                  <strong>REVIEWER AUDIT PIPELINE</strong>
+                  <p>When submitted, your technical lab finding and reproduction chain are immediately sent to the Reviewer Panel for expert verification and scoring.</p>
                 </div>
 
                 <div className="modal-actions">
                   <button className="button secondary" onClick={() => setModal('')}>Cancel</button>
                   <button
                     className="button primary"
-                    onClick={() => void handleCandidateSubmitReport()}
+                    onClick={() => void handleCandidateSubmitFinding()}
                   >
-                    <FileCheck2 size={14} /> Upload &amp; Submit to Reviewer Panel
+                    <FileCheck2 size={14} /> Submit Lab Finding to Reviewer
                   </button>
                 </div>
               </>
