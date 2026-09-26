@@ -133,6 +133,7 @@ export default function SecureAssessment({ role, token, onLaunchAssessment, onAs
   const lastFrameTimestamp = useRef<Record<string, number>>({});
   const offeredPeers = useRef<Record<string, boolean>>({});
   const mediaChannel = useRef<BroadcastChannel | null>(null);
+  const rtcChannel = useRef<BroadcastChannel | null>(null);
   const selectedIdRef = useRef('');
   const focusedIdRef = useRef<string | null>(null);
   selectedIdRef.current = selectedId;
@@ -175,9 +176,8 @@ export default function SecureAssessment({ role, token, onLaunchAssessment, onAs
         const { assessment_id, kind, image, ts } = (event.data || {}) as { assessment_id?: string; kind?: 'camera' | 'screen'; image?: string; ts?: number };
         if (assessment_id && kind && image) {
           const key = `${assessment_id}_${kind}`;
-          // If we already have a live WebRTC stream, don't flicker with low-res image frames!
-          if (receivedStreams.current[assessment_id]?.[kind]) return;
-          // Drop stale backlog frames from when tab was switched!
+          const hasActiveStream = Boolean(receivedStreams.current[assessment_id]?.[kind]?.active && receivedStreams.current[assessment_id]?.[kind]?.getVideoTracks().some(t => t.readyState === 'live'));
+          if (hasActiveStream) return;
           if (ts && lastFrameTimestamp.current[key] && ts < lastFrameTimestamp.current[key]) return;
           if (ts) lastFrameTimestamp.current[key] = ts;
 
@@ -195,7 +195,19 @@ export default function SecureAssessment({ role, token, onLaunchAssessment, onAs
           }
         }
       };
-      return () => { bc.close(); };
+
+      const rc = new BroadcastChannel('proofforge_rtc_channel');
+      rtcChannel.current = rc;
+      rc.onmessage = (event: MessageEvent) => {
+        const message = event.data;
+        if (!message?.assessment_id || !message?.kind || !message?.type) return;
+        window.dispatchEvent(new CustomEvent('proofforge_local_rtc_signal', { detail: message }));
+      };
+
+      return () => {
+        bc.close();
+        rc.close();
+      };
     }
   }, []);
 
@@ -509,8 +521,10 @@ export default function SecureAssessment({ role, token, onLaunchAssessment, onAs
     const pc = new RTCPeerConnection({ iceServers: iceServersRef.current });
     peers.current[key] = pc;
     pc.onicecandidate = event => {
-      if (event.candidate && socketRef.current) {
-        socketRef.current.emit('rtc_signal', { assessment_id: assessmentId, kind, type: 'ice', payload: event.candidate });
+      if (event.candidate) {
+        const iceMsg = { assessment_id: assessmentId, kind, type: 'ice' as const, payload: event.candidate };
+        socketRef.current?.emit('rtc_signal', iceMsg);
+        rtcChannel.current?.postMessage(iceMsg);
       }
     };
     pc.ontrack = event => {
@@ -578,7 +592,9 @@ export default function SecureAssessment({ role, token, onLaunchAssessment, onAs
         });
         pc.createOffer()
           .then(offer => pc.setLocalDescription(offer).then(() => {
-            socket.emit('rtc_signal', { assessment_id: sess.id, kind, type: 'offer', payload: offer });
+            const offerMsg = { assessment_id: sess.id, kind, type: 'offer' as const, payload: offer };
+            socket.emit('rtc_signal', offerMsg);
+            rtcChannel.current?.postMessage(offerMsg);
           }))
           .catch(() => {});
       }
@@ -626,7 +642,7 @@ export default function SecureAssessment({ role, token, onLaunchAssessment, onAs
       }
     });
 
-    socket.on('rtc_signal', async (message: { assessment_id?: string; kind?: 'camera' | 'screen'; type: 'offer' | 'answer' | 'ice'; payload: RTCSessionDescriptionInit | RTCIceCandidateInit }) => {
+    const handleRtcSignal = async (message: { assessment_id?: string; kind?: 'camera' | 'screen'; type: 'offer' | 'answer' | 'ice'; payload: RTCSessionDescriptionInit | RTCIceCandidateInit }) => {
       const targetId = message.assessment_id || sessionRef.current?.id;
       if (!targetId || (message.kind !== 'camera' && message.kind !== 'screen')) return;
       const pc = ensurePeer(targetId, message.kind);
@@ -642,7 +658,9 @@ export default function SecureAssessment({ role, token, onLaunchAssessment, onAs
           }
           const answer = await pc.createAnswer();
           await pc.setLocalDescription(answer);
-          socket.emit('rtc_signal', { assessment_id: targetId, kind: message.kind, type: 'answer', payload: answer });
+          const ansMsg = { assessment_id: targetId, kind: message.kind, type: 'answer' as const, payload: answer };
+          socket.emit('rtc_signal', ansMsg);
+          rtcChannel.current?.postMessage(ansMsg);
         } else if (message.type === 'answer' && role === 'Candidate') {
           if (pc.signalingState === 'have-local-offer') {
             await pc.setRemoteDescription(message.payload as RTCSessionDescriptionInit);
@@ -651,7 +669,15 @@ export default function SecureAssessment({ role, token, onLaunchAssessment, onAs
           await pc.addIceCandidate(message.payload as RTCIceCandidateInit).catch(() => {});
         }
       } catch {}
-    });
+    };
+
+    socket.on('rtc_signal', handleRtcSignal);
+
+    const onLocalRtc = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      if (customEvent.detail) void handleRtcSignal(customEvent.detail);
+    };
+    window.addEventListener('proofforge_local_rtc_signal', onLocalRtc);
 
     socket.on('assessment_control', (payload: { session: SecureSession; control?: string }) => {
       if (role !== 'Candidate' || payload.session?.id !== sessionRef.current?.id) return;
@@ -665,6 +691,7 @@ export default function SecureAssessment({ role, token, onLaunchAssessment, onAs
     });
 
     return () => {
+      window.removeEventListener('proofforge_local_rtc_signal', onLocalRtc);
       socket.disconnect();
       socketRef.current = null;
       Object.values(peers.current).forEach(peer => peer.close());
@@ -924,51 +951,54 @@ export default function SecureAssessment({ role, token, onLaunchAssessment, onAs
               <div><small>CONNECTION</small><b>{viewingSession.connected ? 'Connected' : 'Disconnected'}</b></div>
             </div>
 
-            {/* Enlarged live feed */}
             <div className="reviewer-detail-feeds">
-              <div className="reviewer-detail-feed-main" style={{ position: 'relative', overflow: 'hidden' }}>
-                <label style={{ position: 'relative', zIndex: 5 }}><MonitorUp size={13}/> SHARED SCREEN · {viewingSession.screen ? 'LIVE' : 'INACTIVE'} · {viewingSession.candidate_name}</label>
-                <img
-                  ref={el => {
-                    detailImgRefs.current.screen = el;
-                    const prev = mosaicImgRefs.current[`${viewingSession.id}_screen`]?.src;
-                    if (el && prev && prev.startsWith('data:')) el.src = prev;
-                  }}
-                  alt={`${viewingSession.candidate_name} screen`}
-                  style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', minHeight: 340, objectFit: 'contain', background: '#090d16', borderRadius: 8, zIndex: 1, display: receivedStreams.current[viewingSession.id]?.screen ? 'none' : 'block' }}
-                />
-                <video
-                  ref={el => {
-                    detailVideoRefs.current.screen = el;
-                    const s = receivedStreams.current[viewingSession.id]?.screen;
-                    const img = detailImgRefs.current.screen;
-                    if (s) attachStreamToVideo(el, img, s);
-                  }}
-                  autoPlay muted playsInline
-                  style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'contain', borderRadius: 8, zIndex: 2, display: receivedStreams.current[viewingSession.id]?.screen ? 'block' : 'none' }}
-                />
+              <div className="reviewer-detail-feed-main">
+                <label><MonitorUp size={13}/> SHARED SCREEN · {viewingSession.screen ? 'LIVE' : 'INACTIVE'} · {viewingSession.candidate_name}</label>
+                <div className="reviewer-detail-media-wrap">
+                  <img
+                    ref={el => {
+                      detailImgRefs.current.screen = el;
+                      const prev = mosaicImgRefs.current[`${viewingSession.id}_screen`]?.src;
+                      if (el && prev && prev.startsWith('data:')) el.src = prev;
+                    }}
+                    alt={`${viewingSession.candidate_name} screen`}
+                    style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'contain', background: '#090d16', zIndex: 1, display: receivedStreams.current[viewingSession.id]?.screen ? 'none' : 'block' }}
+                  />
+                  <video
+                    ref={el => {
+                      detailVideoRefs.current.screen = el;
+                      const s = receivedStreams.current[viewingSession.id]?.screen;
+                      const img = detailImgRefs.current.screen;
+                      if (s) attachStreamToVideo(el, img, s);
+                    }}
+                    autoPlay muted playsInline
+                    style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'contain', zIndex: 2, display: receivedStreams.current[viewingSession.id]?.screen ? 'block' : 'none' }}
+                  />
+                </div>
               </div>
-              <div className="reviewer-detail-feed-cam" style={{ position: 'relative', overflow: 'hidden' }}>
-                <label style={{ position: 'relative', zIndex: 5 }}><Camera size={13}/> CAMERA · {viewingSession.camera ? 'CONNECTED' : 'NOT CONNECTED'}</label>
-                <img
-                  ref={el => {
-                    detailImgRefs.current.camera = el;
-                    const prev = mosaicImgRefs.current[`${viewingSession.id}_camera`]?.src;
-                    if (el && prev && prev.startsWith('data:')) el.src = prev;
-                  }}
-                  alt={`${viewingSession.candidate_name} camera`}
-                  style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', minHeight: 240, objectFit: 'cover', borderRadius: 8, zIndex: 1, display: receivedStreams.current[viewingSession.id]?.camera ? 'none' : 'block' }}
-                />
-                <video
-                  ref={el => {
-                    detailVideoRefs.current.camera = el;
-                    const s = receivedStreams.current[viewingSession.id]?.camera;
-                    const img = detailImgRefs.current.camera;
-                    if (s) attachStreamToVideo(el, img, s);
-                  }}
-                  autoPlay muted playsInline
-                  style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', borderRadius: 8, zIndex: 2, display: receivedStreams.current[viewingSession.id]?.camera ? 'block' : 'none' }}
-                />
+              <div className="reviewer-detail-feed-cam">
+                <label><Camera size={13}/> CAMERA · {viewingSession.camera ? 'CONNECTED' : 'NOT CONNECTED'}</label>
+                <div className="reviewer-detail-media-wrap reviewer-detail-media-wrap-cam">
+                  <img
+                    ref={el => {
+                      detailImgRefs.current.camera = el;
+                      const prev = mosaicImgRefs.current[`${viewingSession.id}_camera`]?.src;
+                      if (el && prev && prev.startsWith('data:')) el.src = prev;
+                    }}
+                    alt={`${viewingSession.candidate_name} camera`}
+                    style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', zIndex: 1, display: receivedStreams.current[viewingSession.id]?.camera ? 'none' : 'block' }}
+                  />
+                  <video
+                    ref={el => {
+                      detailVideoRefs.current.camera = el;
+                      const s = receivedStreams.current[viewingSession.id]?.camera;
+                      const img = detailImgRefs.current.camera;
+                      if (s) attachStreamToVideo(el, img, s);
+                    }}
+                    autoPlay muted playsInline
+                    style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', zIndex: 2, display: receivedStreams.current[viewingSession.id]?.camera ? 'block' : 'none' }}
+                  />
+                </div>
               </div>
             </div>
 

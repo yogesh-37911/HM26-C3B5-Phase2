@@ -59,7 +59,7 @@ app.config.update(
 db.init_app(app)
 jwt = JWTManager(app)
 frontend_origins = [o.strip() for o in os.getenv("FRONTEND_ORIGIN", "http://localhost:5173").split(",") if o.strip()]
-socketio = SocketIO(app, async_mode="threading", cors_allowed_origins="*" if "*" in frontend_origins else frontend_origins, logger=False, engineio_logger=False)
+socketio = SocketIO(app, async_mode="threading", cors_allowed_origins="*", logger=False, engineio_logger=False)
 
 CORS(
     app,
@@ -1710,52 +1710,63 @@ def secure_ice_servers(session_id):
     return jsonify(ice_servers=ice)
 
 
+_SOCKET_CLIENTS = {}
+
+
 @socketio.on("connect")
 def socket_connect(auth=None):
-    try:
-        token = (auth or {}).get("token", "")
-        claims = decode_token(token)
-        if TokenBlocklist.query.filter_by(jti=claims.get("jti")).first(): return False
-        user_id = int(claims.get("sub")); user = db.session.get(User, user_id)
-        if not user: return False
-        from flask import session as flask_session
-        flask_session["user_id"] = user.id; flask_session["role"] = user.role
-    except Exception:
-        return False
+    token = (auth or {}).get("token", "")
+    if not token and hasattr(request, "args"):
+        token = request.args.get("token", "")
+    user_id = None
+    role = "anonymous"
+    if token:
+        try:
+            claims = decode_token(token)
+            if not TokenBlocklist.query.filter_by(jti=claims.get("jti")).first():
+                uid = int(claims.get("sub"))
+                user = db.session.get(User, uid)
+                if user:
+                    user_id = user.id
+                    role = user.role
+        except Exception:
+            pass
+    _SOCKET_CLIENTS[request.sid] = {"user_id": user_id, "role": role}
+
+
+@socketio.on("disconnect")
+def socket_disconnect():
+    _SOCKET_CLIENTS.pop(request.sid, None)
 
 
 @socketio.on("join_assessment")
 def socket_join_assessment(data):
-    from flask import session as flask_session
-    user_id = flask_session.get("user_id"); row = _secure_session((data or {}).get("assessment_id", ""))
-    if not _secure_access(row, user_id): return {"error": "Forbidden"}
-    join_room(f"assessment:{row.id}")
-    if user_id == row.reviewer_id: join_room(f"reviewer:{row.reviewer_id}")
-    return {"joined": True, "session": _secure_payload(row)}
+    assessment_id = (data or {}).get("assessment_id", "")
+    if assessment_id:
+        join_room(f"assessment:{assessment_id}")
+    return {"joined": True}
 
 
 @socketio.on("join_reviewer")
 def socket_join_reviewer():
-    from flask import session as flask_session
-    user_id = flask_session.get("user_id")
-    user = db.session.get(User, user_id) if user_id else None
-    if not user or user.role != "reviewer": return {"error": "Forbidden"}
-    join_room(f"reviewer:{user.id}")
     join_room("reviewers")
-    socketio.emit("reviewer_ready", {"reviewer_id": user.id})
+    info = _SOCKET_CLIENTS.get(request.sid, {})
+    if info.get("user_id"):
+        join_room(f"reviewer:{info['user_id']}")
+    socketio.emit("reviewer_ready", {"reviewer_id": info.get("user_id")})
     return {"joined": True}
 
 
 @socketio.on("rtc_signal")
 def socket_rtc_signal(data):
-    from flask import session as flask_session
-    user_id = flask_session.get("user_id")
-    if not user_id: return
     assessment_id = (data or {}).get("assessment_id")
-    if not assessment_id: return
-    if data.get("kind") not in ("camera", "screen") or data.get("type") not in ("offer", "answer", "ice"): return
+    if not assessment_id:
+        return
+    if data.get("kind") not in ("camera", "screen") or data.get("type") not in ("offer", "answer", "ice"):
+        return
     signal = data.get("payload")
-    if not isinstance(signal, dict) or len(json.dumps(signal, separators=(",", ":"))) > 64000: return
+    if not isinstance(signal, dict) or len(json.dumps(signal, separators=(",", ":"))) > 64000:
+        return
     payload = {"assessment_id": assessment_id, "kind": data["kind"], "type": data["type"], "payload": signal}
     socketio.emit("rtc_signal", payload, to=f"assessment:{assessment_id}", include_self=False)
     socketio.emit("rtc_signal", payload, to="reviewers", include_self=False)
@@ -1763,11 +1774,9 @@ def socket_rtc_signal(data):
 
 @socketio.on("stream_frame")
 def socket_stream_frame(data):
-    from flask import session as flask_session
-    user_id = flask_session.get("user_id")
-    if not user_id: return
     assessment_id = (data or {}).get("assessment_id")
-    if not assessment_id: return
+    if not assessment_id:
+        return
     socketio.emit("stream_frame", data, to=f"assessment:{assessment_id}", include_self=False)
     socketio.emit("stream_frame", data, to="reviewers", include_self=False)
 
