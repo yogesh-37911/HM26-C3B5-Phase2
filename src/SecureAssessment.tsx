@@ -123,10 +123,15 @@ export default function SecureAssessment({ role, token, onLaunchAssessment, onAs
   const streamsRef = useRef<{ camera: MediaStream | null; screen: MediaStream | null }>({ camera: null, screen: null });
   const candCamVideo = useRef<HTMLVideoElement | null>(null);
   const candScreenVideo = useRef<HTMLVideoElement | null>(null);
+  const mosaicVideoRefs = useRef<Record<string, HTMLVideoElement | null>>({});
+  const mosaicImgRefs = useRef<Record<string, HTMLImageElement | null>>({});
+  const detailVideoRefs = useRef<{ camera: HTMLVideoElement | null; screen: HTMLVideoElement | null }>({ camera: null, screen: null });
+  const detailImgRefs = useRef<{ camera: HTMLImageElement | null; screen: HTMLImageElement | null }>({ camera: null, screen: null });
   const receivedStreams = useRef<Record<string, { camera?: MediaStream; screen?: MediaStream }>>({});
-  const receivedFrames = useRef<Record<string, { camera?: string; screen?: string }>>({});
-  const [, setStreamTick] = useState(0);
   const mediaChannel = useRef<BroadcastChannel | null>(null);
+  const selectedIdRef = useRef('');
+  const focusedIdRef = useRef<string | null>(null);
+  selectedIdRef.current = selectedId;
   sessionRef.current = session; streamsRef.current = { camera, screen };
   autoSubmitRef.current = onAutoSubmitAssessment;
 
@@ -134,11 +139,11 @@ export default function SecureAssessment({ role, token, onLaunchAssessment, onAs
     try {
       const data = await request<{ sessions: SecureSession[] }>(token, '/api/secure-assessments');
       setSessions(data.sessions || []);
-      if (role === 'Reviewer' && !selectedId && data.sessions?.[0]) setSelectedId(data.sessions[0].id);
+      if (role === 'Reviewer' && !selectedIdRef.current && data.sessions?.[0]) setSelectedId(data.sessions[0].id);
     } catch {
       // Keep empty if failed
     }
-  }, [token, role, selectedId]);
+  }, [token, role]);
 
   useEffect(() => {
     if (role === 'Reviewer') {
@@ -164,9 +169,13 @@ export default function SecureAssessment({ role, token, onLaunchAssessment, onAs
       bc.onmessage = (event: MessageEvent) => {
         const { assessment_id, kind, image } = (event.data || {}) as { assessment_id?: string; kind?: 'camera' | 'screen'; image?: string };
         if (assessment_id && kind && image) {
-          if (!receivedFrames.current[assessment_id]) receivedFrames.current[assessment_id] = {};
-          receivedFrames.current[assessment_id][kind] = image;
-          setStreamTick(t => t + 1);
+          const key = `${assessment_id}_${kind}`;
+          const mImg = mosaicImgRefs.current[key];
+          if (mImg) mImg.src = image;
+          if (focusedIdRef.current === assessment_id || selectedIdRef.current === assessment_id) {
+            const dImg = detailImgRefs.current[kind];
+            if (dImg) dImg.src = image;
+          }
         }
       };
       return () => { bc.close(); };
@@ -178,28 +187,30 @@ export default function SecureAssessment({ role, token, onLaunchAssessment, onAs
     const canvas = document.createElement('canvas');
     canvas.width = 320;
     canvas.height = 240;
-    const ctx = canvas.getContext('2d');
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
 
+    let active = true;
     const timer = setInterval(() => {
-      if (candCamVideo.current && candCamVideo.current.videoWidth > 0 && ctx) {
+      if (!active) return;
+      if (candCamVideo.current && candCamVideo.current.readyState >= 2 && ctx) {
         try {
           ctx.drawImage(candCamVideo.current, 0, 0, 320, 240);
-          const img = canvas.toDataURL('image/jpeg', 0.5);
+          const img = canvas.toDataURL('image/jpeg', 0.4);
           socketRef.current?.emit('stream_frame', { assessment_id: session.id, kind: 'camera', image: img });
           mediaChannel.current?.postMessage({ assessment_id: session.id, kind: 'camera', image: img });
         } catch {}
       }
-      if (candScreenVideo.current && candScreenVideo.current.videoWidth > 0 && ctx) {
+      if (candScreenVideo.current && candScreenVideo.current.readyState >= 2 && ctx) {
         try {
           ctx.drawImage(candScreenVideo.current, 0, 0, 320, 240);
-          const img = canvas.toDataURL('image/jpeg', 0.45);
+          const img = canvas.toDataURL('image/jpeg', 0.35);
           socketRef.current?.emit('stream_frame', { assessment_id: session.id, kind: 'screen', image: img });
           mediaChannel.current?.postMessage({ assessment_id: session.id, kind: 'screen', image: img });
         } catch {}
       }
-    }, 350);
+    }, 250);
 
-    return () => clearInterval(timer);
+    return () => { active = false; clearInterval(timer); };
   }, [role, session?.id, session?.status]);
 
   const stopLocalMedia = useCallback(() => {
@@ -445,110 +456,151 @@ export default function SecureAssessment({ role, token, onLaunchAssessment, onAs
     if (role === 'Candidate' && session?.status === 'active' && currentChallenge) void updateStatus({ current_challenge: currentChallenge });
   }, [role, session?.id, session?.status, currentChallenge, updateStatus]);
 
-  useEffect(() => {
-    if (role !== 'Reviewer') return;
-    const socket = io(API, { auth: { token }, transports: ['websocket', 'polling'], reconnection: true });
-    socket.on('connect', () => socket.emit('join_reviewer'));
-    socket.on('assessment_update', () => void fetchSessions());
-    socket.on('stream_frame', (payload: { assessment_id?: string; kind?: 'camera' | 'screen'; image?: string }) => {
-      if (payload?.assessment_id && payload?.kind && payload?.image) {
-        if (!receivedFrames.current[payload.assessment_id]) receivedFrames.current[payload.assessment_id] = {};
-        receivedFrames.current[payload.assessment_id][payload.kind] = payload.image;
-        setStreamTick(t => t + 1);
+  const ensurePeer = useCallback((assessmentId: string, kind: 'camera' | 'screen') => {
+    const key = `${assessmentId}_${kind}`;
+    if (peers.current[key] && peers.current[key].signalingState !== 'closed') {
+      return peers.current[key];
+    }
+    const pc = new RTCPeerConnection({ iceServers: iceServersRef.current });
+    peers.current[key] = pc;
+    pc.onicecandidate = event => {
+      if (event.candidate && socketRef.current) {
+        socketRef.current.emit('rtc_signal', { assessment_id: assessmentId, kind, type: 'ice', payload: event.candidate });
       }
-    });
-    socket.on('assessment_event', (payload: { session?: SecureSession; event?: { type: string; severity: string } }) => {
-      setReviewerAlert(`${payload.session?.candidate_name || 'Candidate'} · ${payload.event?.type?.replace(/_/g, ' ') || 'SECURITY EVENT'} · ${payload.event?.severity || 'info'}`); void fetchSessions();
-    });
-    return () => { socket.disconnect(); };
-  }, [role, token, fetchSessions]);
-
-  useEffect(() => {
-    const activeSession = role === 'Candidate' ? session : sessions.find(item => item.id === selectedId) || null;
-    if (!activeSession) return;
-    let stopped = false;
-    const socket = io(API, { auth: { token }, transports: ['websocket', 'polling'], reconnection: true }); socketRef.current = socket;
-    const ensurePeer = (kind: 'camera' | 'screen') => {
-      if (peers.current[kind]) return peers.current[kind];
-      const pc = new RTCPeerConnection({ iceServers: iceServersRef.current }); peers.current[kind] = pc;
-      pc.onicecandidate = event => { if (event.candidate) socket.emit('rtc_signal', { assessment_id: activeSession.id, kind, type: 'ice', payload: event.candidate }); };
-      pc.ontrack = event => {
-        const stream = event.streams[0];
-        if (!receivedStreams.current[activeSession.id]) receivedStreams.current[activeSession.id] = {};
-        receivedStreams.current[activeSession.id][kind] = stream;
-        const video = videoRefs.current[activeSession.id]?.[kind];
-        if (video) {
-          video.srcObject = stream;
-          video.play().catch(() => {});
-        }
-        setStreamTick(t => t + 1);
-      };
-      pc.onconnectionstatechange = () => {
-        const state = pc.connectionState;
-        if (role === 'Candidate' && state === 'connected') { void updateStatus({ connected: true }); void logEvent('NETWORK_CONNECTED', { transport: 'webrtc' }); }
-        if (role === 'Candidate' && (state === 'failed' || (state === 'disconnected' && Object.values(peers.current).every(item => ['failed', 'disconnected', 'closed'].includes(item.connectionState))))) {
-          void updateStatus({ connected: false }); void logEvent('NETWORK_DISCONNECTED', { transport: 'webrtc' });
-          setNotice(policy?.fallback_meeting_url ? 'Reviewer media connection failed. Use the configured fallback meeting.' : 'Reviewer media connection failed. Ask the reviewer to configure a TURN service or meeting fallback.');
-        }
-      };
-      return pc;
     };
-    socket.on('connect', async () => {
-      if (stopped) return;
-      const ice = await request<{ ice_servers: RTCIceServer[] }>(token, `/api/secure-assessments/${activeSession.id}/ice-servers`).catch(() => ({ ice_servers: [{ urls: 'stun:stun.l.google.com:19302' }] }));
-      iceServersRef.current = ice.ice_servers;
-      Object.values(peers.current).forEach(peer => peer.setConfiguration({ iceServers: iceServersRef.current }));
-      await new Promise<void>(resolve => socket.emit('join_assessment', { assessment_id: activeSession.id }, () => resolve()));
+    pc.ontrack = event => {
+      const stream = event.streams[0];
+      if (!receivedStreams.current[assessmentId]) receivedStreams.current[assessmentId] = {};
+      receivedStreams.current[assessmentId][kind] = stream;
+
+      const mEl = mosaicVideoRefs.current[`${assessmentId}_${kind}`];
+      if (mEl) {
+        mEl.srcObject = stream;
+        mEl.play().catch(() => {});
+      }
+      const dEl = detailVideoRefs.current[kind];
+      if (dEl && (selectedIdRef.current === assessmentId || focusedIdRef.current === assessmentId)) {
+        dEl.srcObject = stream;
+        dEl.play().catch(() => {});
+      }
+    };
+    pc.onconnectionstatechange = () => {
+      const state = pc.connectionState;
+      if (role === 'Candidate' && state === 'connected') {
+        void updateStatus({ connected: true });
+        void logEvent('NETWORK_CONNECTED', { transport: 'webrtc' });
+      }
+      if (role === 'Candidate' && (state === 'failed' || (state === 'disconnected' && Object.values(peers.current).every(item => ['failed', 'disconnected', 'closed'].includes(item.connectionState))))) {
+        void updateStatus({ connected: false });
+        void logEvent('NETWORK_DISCONNECTED', { transport: 'webrtc' });
+      }
+    };
+    return pc;
+  }, [role, logEvent, updateStatus]);
+
+  // Main persistent socket connection - connects ONCE and NEVER tears down on state re-render
+  useEffect(() => {
+    const socket = io(API, { auth: { token }, transports: ['websocket', 'polling'], reconnection: true });
+    socketRef.current = socket;
+
+    socket.on('connect', () => {
       if (role === 'Reviewer') {
-        for (const s of sessions) {
-          if (s.id !== activeSession.id) socket.emit('join_assessment', { assessment_id: s.id });
-        }
-      }
-      if (role === 'Candidate' && activeSession.status === 'active') {
-        for (const kind of ['camera', 'screen'] as const) {
-          const stream = kind === 'camera' ? streamsRef.current.camera : streamsRef.current.screen; if (!stream) continue;
-          const pc = ensurePeer(kind); stream.getTracks().forEach(track => pc.addTrack(track, stream));
-          const offer = await pc.createOffer(); await pc.setLocalDescription(offer); socket.emit('rtc_signal', { assessment_id: activeSession.id, kind, type: 'offer', payload: offer });
-        }
+        socket.emit('join_reviewer');
       }
     });
-    socket.on('stream_frame', (payload: { assessment_id?: string; kind?: 'camera' | 'screen'; image?: string }) => {
-      if (payload?.assessment_id && payload?.kind && payload?.image) {
-        if (!receivedFrames.current[payload.assessment_id]) receivedFrames.current[payload.assessment_id] = {};
-        receivedFrames.current[payload.assessment_id][payload.kind] = payload.image;
-        setStreamTick(t => t + 1);
-      }
-    });
-    socket.on('rtc_signal', async (message: { kind: 'camera' | 'screen'; type: 'offer' | 'answer' | 'ice'; payload: RTCSessionDescriptionInit | RTCIceCandidateInit }) => {
-      if (message.kind !== 'camera' && message.kind !== 'screen') return;
-      const pc = ensurePeer(message.kind);
-      try {
-        if (message.type === 'offer' && role === 'Reviewer') { await pc.setRemoteDescription(message.payload as RTCSessionDescriptionInit); const answer = await pc.createAnswer(); await pc.setLocalDescription(answer); socket.emit('rtc_signal', { assessment_id: activeSession.id, kind: message.kind, type: 'answer', payload: answer }); }
-        else if (message.type === 'answer' && role === 'Candidate') await pc.setRemoteDescription(message.payload as RTCSessionDescriptionInit);
-        else if (message.type === 'ice') await pc.addIceCandidate(message.payload as RTCIceCandidateInit);
-      } catch { /* Connectivity failures are surfaced as stream status below. */ }
-    });
+
     socket.on('assessment_update', (payload: { session: SecureSession; control?: string }) => {
       if (role === 'Candidate' && payload.session?.id === sessionRef.current?.id) {
         setSession(payload.session);
-        if (payload.control === 'end' || payload.session.status === 'ended') { stopLocalMedia(); setNotice('The reviewer ended this assessment. Your camera and screen are no longer shared.'); onAssessmentEnded?.(); }
+        if (payload.control === 'end' || payload.session.status === 'ended') {
+          stopLocalMedia();
+          setNotice('The reviewer ended this assessment. Your camera and screen are no longer shared.');
+          onAssessmentEnded?.();
+        }
         if (payload.control === 'pause') setNotice('The reviewer paused the assessment. Please wait for them to resume.');
         if (payload.control === 'resume') setNotice('The reviewer resumed the assessment.');
-      } else if (role === 'Reviewer') void fetchSessions();
+      } else if (role === 'Reviewer') {
+        void fetchSessions();
+      }
     });
+
     socket.on('assessment_event', (payload: { session?: SecureSession; event?: { type: string; severity: string } }) => {
-      if (role === 'Reviewer') { setReviewerAlert(`${payload.session?.candidate_name || 'Candidate'} · ${payload.event?.type?.replace(/_/g, ' ') || 'SECURITY EVENT'} · ${payload.event?.severity || 'info'}`); void fetchSessions(); }
+      if (role === 'Reviewer') {
+        setReviewerAlert(`${payload.session?.candidate_name || 'Candidate'} · ${payload.event?.type?.replace(/_/g, ' ') || 'SECURITY EVENT'} · ${payload.event?.severity || 'info'}`);
+        void fetchSessions();
+      }
     });
-    socket.on('disconnect', () => { if (!stopped && role === 'Candidate' && sessionRef.current?.status === 'active') { void updateStatus({ connected: false }); void logEvent('NETWORK_DISCONNECTED'); } });
+
+    socket.on('stream_frame', (payload: { assessment_id?: string; kind?: 'camera' | 'screen'; image?: string }) => {
+      if (!payload?.assessment_id || !payload?.kind || !payload?.image) return;
+      const key = `${payload.assessment_id}_${payload.kind}`;
+      const mImg = mosaicImgRefs.current[key];
+      if (mImg) mImg.src = payload.image;
+      const dImg = detailImgRefs.current[payload.kind];
+      if (dImg && (selectedIdRef.current === payload.assessment_id || focusedIdRef.current === payload.assessment_id)) {
+        dImg.src = payload.image;
+      }
+    });
+
+    socket.on('rtc_signal', async (message: { assessment_id?: string; kind?: 'camera' | 'screen'; type: 'offer' | 'answer' | 'ice'; payload: RTCSessionDescriptionInit | RTCIceCandidateInit }) => {
+      const targetId = message.assessment_id || sessionRef.current?.id;
+      if (!targetId || (message.kind !== 'camera' && message.kind !== 'screen')) return;
+      const pc = ensurePeer(targetId, message.kind);
+      try {
+        if (message.type === 'offer' && role === 'Reviewer') {
+          await pc.setRemoteDescription(message.payload as RTCSessionDescriptionInit);
+          const answer = await pc.createAnswer();
+          await pc.setLocalDescription(answer);
+          socket.emit('rtc_signal', { assessment_id: targetId, kind: message.kind, type: 'answer', payload: answer });
+        } else if (message.type === 'answer' && role === 'Candidate') {
+          await pc.setRemoteDescription(message.payload as RTCSessionDescriptionInit);
+        } else if (message.type === 'ice') {
+          await pc.addIceCandidate(message.payload as RTCIceCandidateInit);
+        }
+      } catch {}
+    });
+
     socket.on('assessment_control', (payload: { session: SecureSession; control?: string }) => {
       if (role !== 'Candidate' || payload.session?.id !== sessionRef.current?.id) return;
       setSession(payload.session);
-      if (payload.control === 'end' || payload.session.status === 'ended') { stopLocalMedia(); setNotice('The reviewer ended this assessment. Your camera and screen are no longer shared.'); onAssessmentEnded?.(); }
-      else if (payload.control === 'pause') setNotice('The reviewer paused the assessment. Please wait for them to resume.');
+      if (payload.control === 'end' || payload.session.status === 'ended') {
+        stopLocalMedia();
+        setNotice('The reviewer ended this assessment. Your camera and screen are no longer shared.');
+        onAssessmentEnded?.();
+      } else if (payload.control === 'pause') setNotice('The reviewer paused the assessment. Please wait for them to resume.');
       else if (payload.control === 'resume') setNotice('The reviewer resumed the assessment.');
     });
-    return () => { stopped = true; socket.disconnect(); if (socketRef.current === socket) socketRef.current = null; Object.values(peers.current).forEach(peer => peer.close()); peers.current = {}; };
-  }, [session?.id, session?.status, sessions.map(s => s.id).join(','), selectedId, role, token, policy?.fallback_meeting_url]);
+
+    return () => {
+      socket.disconnect();
+      socketRef.current = null;
+      Object.values(peers.current).forEach(peer => peer.close());
+      peers.current = {};
+    };
+  }, [role, token, ensurePeer, stopLocalMedia, onAssessmentEnded, fetchSessions]);
+
+  // Candidate: join assessment room and send WebRTC offers
+  useEffect(() => {
+    if (role !== 'Candidate' || session?.status !== 'active') return;
+    const socket = socketRef.current;
+    if (!socket) return;
+    socket.emit('join_assessment', { assessment_id: session.id });
+
+    for (const kind of ['camera', 'screen'] as const) {
+      const stream = kind === 'camera' ? streamsRef.current.camera : streamsRef.current.screen;
+      if (!stream) continue;
+      const pc = ensurePeer(session.id, kind);
+      const senders = pc.getSenders();
+      stream.getTracks().forEach(track => {
+        if (!senders.some(s => s.track === track)) pc.addTrack(track, stream);
+      });
+      pc.createOffer()
+        .then(offer => pc.setLocalDescription(offer).then(() => {
+          socket.emit('rtc_signal', { assessment_id: session.id, kind, type: 'offer', payload: offer });
+        }))
+        .catch(() => {});
+    }
+  }, [role, session?.id, session?.status, camera, screen, ensurePeer]);
 
   useEffect(() => {
     const newlySubmitted = !submittedBefore.current && Boolean(assessmentSubmitted);
@@ -691,42 +743,44 @@ export default function SecureAssessment({ role, token, onLaunchAssessment, onAs
                 <span className="mosaic-timer"><Clock3 size={11}/>{timeLabel(remaining)}</span>
               </div>
               <div className="mosaic-feeds">
-                <div className="mosaic-feed-cam">
-                  {receivedFrames.current[sess.id]?.camera ? (
-                    <img src={receivedFrames.current[sess.id]?.camera} alt={`${sess.candidate_name} camera`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                  ) : (
-                    <video
-                      ref={el => {
-                        if (!videoRefs.current[sess.id]) videoRefs.current[sess.id] = { camera: null, screen: null };
-                        videoRefs.current[sess.id].camera = el;
-                        const s = receivedStreams.current[sess.id]?.camera || simStreams.current[sess.id]?.camera;
-                        if (el && s && el.srcObject !== s) {
-                          el.srcObject = s;
-                          el.play().catch(() => {});
-                        }
-                      }}
-                      autoPlay muted playsInline
-                    />
-                  )}
+                <div className="mosaic-feed-cam" style={{ position: 'relative', overflow: 'hidden' }}>
+                  <img
+                    ref={el => { mosaicImgRefs.current[`${sess.id}_camera`] = el; }}
+                    alt={`${sess.candidate_name} camera`}
+                    style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                  />
+                  <video
+                    ref={el => {
+                      mosaicVideoRefs.current[`${sess.id}_camera`] = el;
+                      const s = receivedStreams.current[sess.id]?.camera;
+                      if (el && s && el.srcObject !== s) {
+                        el.srcObject = s;
+                        el.play().catch(() => {});
+                      }
+                    }}
+                    autoPlay muted playsInline
+                    style={{ display: receivedStreams.current[sess.id]?.camera ? 'block' : 'none', position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }}
+                  />
                   <label><Camera size={10}/> CAM</label>
                 </div>
-                <div className="mosaic-feed-screen">
-                  {receivedFrames.current[sess.id]?.screen ? (
-                    <img src={receivedFrames.current[sess.id]?.screen} alt={`${sess.candidate_name} screen`} style={{ width: '100%', height: '100%', objectFit: 'contain', background: '#090d16' }} />
-                  ) : (
-                    <video
-                      ref={el => {
-                        if (!videoRefs.current[sess.id]) videoRefs.current[sess.id] = { camera: null, screen: null };
-                        videoRefs.current[sess.id].screen = el;
-                        const s = receivedStreams.current[sess.id]?.screen || simStreams.current[sess.id]?.screen;
-                        if (el && s && el.srcObject !== s) {
-                          el.srcObject = s;
-                          el.play().catch(() => {});
-                        }
-                      }}
-                      autoPlay muted playsInline
-                    />
-                  )}
+                <div className="mosaic-feed-screen" style={{ position: 'relative', overflow: 'hidden' }}>
+                  <img
+                    ref={el => { mosaicImgRefs.current[`${sess.id}_screen`] = el; }}
+                    alt={`${sess.candidate_name} screen`}
+                    style={{ width: '100%', height: '100%', objectFit: 'contain', background: '#090d16', display: 'block' }}
+                  />
+                  <video
+                    ref={el => {
+                      mosaicVideoRefs.current[`${sess.id}_screen`] = el;
+                      const s = receivedStreams.current[sess.id]?.screen;
+                      if (el && s && el.srcObject !== s) {
+                        el.srcObject = s;
+                        el.play().catch(() => {});
+                      }
+                    }}
+                    autoPlay muted playsInline
+                    style={{ display: receivedStreams.current[sess.id]?.screen ? 'block' : 'none', position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'contain' }}
+                  />
                   <label><MonitorUp size={10}/> SCREEN</label>
                 </div>
               </div>
@@ -763,43 +817,53 @@ export default function SecureAssessment({ role, token, onLaunchAssessment, onAs
 
             {/* Enlarged live feed */}
             <div className="reviewer-detail-feeds">
-              <div className="reviewer-detail-feed-main">
+              <div className="reviewer-detail-feed-main" style={{ position: 'relative', overflow: 'hidden' }}>
                 <label><MonitorUp size={13}/> SHARED SCREEN · {viewingSession.screen ? 'LIVE' : 'INACTIVE'} · {viewingSession.candidate_name}</label>
-                {receivedFrames.current[viewingSession.id]?.screen ? (
-                  <img src={receivedFrames.current[viewingSession.id]?.screen} alt={`${viewingSession.candidate_name} screen`} style={{ width: '100%', height: '100%', objectFit: 'contain', background: '#090d16', borderRadius: 8 }} />
-                ) : (
-                  <video
-                    ref={el => {
-                      if (el) {
-                        const s = receivedStreams.current[viewingSession.id]?.screen || simStreams.current[viewingSession.id]?.screen;
-                        if (s && el.srcObject !== s) {
-                          el.srcObject = s;
-                          el.play().catch(() => {});
-                        }
-                      }
-                    }}
-                    autoPlay muted playsInline
-                  />
-                )}
+                <img
+                  ref={el => {
+                    detailImgRefs.current.screen = el;
+                    const prev = mosaicImgRefs.current[`${viewingSession.id}_screen`]?.src;
+                    if (el && prev && prev.startsWith('data:')) el.src = prev;
+                  }}
+                  alt={`${viewingSession.candidate_name} screen`}
+                  style={{ width: '100%', height: '100%', minHeight: 340, objectFit: 'contain', background: '#090d16', borderRadius: 8 }}
+                />
+                <video
+                  ref={el => {
+                    detailVideoRefs.current.screen = el;
+                    const s = receivedStreams.current[viewingSession.id]?.screen;
+                    if (el && s && el.srcObject !== s) {
+                      el.srcObject = s;
+                      el.play().catch(() => {});
+                    }
+                  }}
+                  autoPlay muted playsInline
+                  style={{ display: receivedStreams.current[viewingSession.id]?.screen ? 'block' : 'none', position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'contain', borderRadius: 8 }}
+                />
               </div>
-              <div className="reviewer-detail-feed-cam">
+              <div className="reviewer-detail-feed-cam" style={{ position: 'relative', overflow: 'hidden' }}>
                 <label><Camera size={13}/> CAMERA · {viewingSession.camera ? 'CONNECTED' : 'NOT CONNECTED'}</label>
-                {receivedFrames.current[viewingSession.id]?.camera ? (
-                  <img src={receivedFrames.current[viewingSession.id]?.camera} alt={`${viewingSession.candidate_name} camera`} style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 8 }} />
-                ) : (
-                  <video
-                    ref={el => {
-                      if (el) {
-                        const s = receivedStreams.current[viewingSession.id]?.camera || simStreams.current[viewingSession.id]?.camera;
-                        if (s && el.srcObject !== s) {
-                          el.srcObject = s;
-                          el.play().catch(() => {});
-                        }
-                      }
-                    }}
-                    autoPlay muted playsInline
-                  />
-                )}
+                <img
+                  ref={el => {
+                    detailImgRefs.current.camera = el;
+                    const prev = mosaicImgRefs.current[`${viewingSession.id}_camera`]?.src;
+                    if (el && prev && prev.startsWith('data:')) el.src = prev;
+                  }}
+                  alt={`${viewingSession.candidate_name} camera`}
+                  style={{ width: '100%', height: '100%', minHeight: 240, objectFit: 'cover', borderRadius: 8 }}
+                />
+                <video
+                  ref={el => {
+                    detailVideoRefs.current.camera = el;
+                    const s = receivedStreams.current[viewingSession.id]?.camera;
+                    if (el && s && el.srcObject !== s) {
+                      el.srcObject = s;
+                      el.play().catch(() => {});
+                    }
+                  }}
+                  autoPlay muted playsInline
+                  style={{ display: receivedStreams.current[viewingSession.id]?.camera ? 'block' : 'none', position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', borderRadius: 8 }}
+                />
               </div>
             </div>
 

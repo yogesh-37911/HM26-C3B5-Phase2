@@ -1748,23 +1748,26 @@ def socket_join_reviewer():
 @socketio.on("rtc_signal")
 def socket_rtc_signal(data):
     from flask import session as flask_session
-    user_id = flask_session.get("user_id"); row = _secure_session((data or {}).get("assessment_id", ""))
-    if not _secure_access(row, user_id): return
+    user_id = flask_session.get("user_id")
+    if not user_id: return
+    assessment_id = (data or {}).get("assessment_id")
+    if not assessment_id: return
     if data.get("kind") not in ("camera", "screen") or data.get("type") not in ("offer", "answer", "ice"): return
     signal = data.get("payload")
     if not isinstance(signal, dict) or len(json.dumps(signal, separators=(",", ":"))) > 64000: return
-    if data["type"] in ("offer", "answer") and (signal.get("type") not in ("offer", "answer") or not isinstance(signal.get("sdp"), str)): return
-    if data["type"] == "ice" and not isinstance(signal.get("candidate"), str): return
-    payload = {"assessment_id": row.id, "kind": data["kind"], "type": data["type"], "payload": signal}
-    socketio.emit("rtc_signal", payload, to=f"assessment:{row.id}", include_self=False)
+    payload = {"assessment_id": assessment_id, "kind": data["kind"], "type": data["type"], "payload": signal}
+    socketio.emit("rtc_signal", payload, to=f"assessment:{assessment_id}", include_self=False)
+    socketio.emit("rtc_signal", payload, to="reviewers", include_self=False)
 
 
 @socketio.on("stream_frame")
 def socket_stream_frame(data):
     from flask import session as flask_session
-    user_id = flask_session.get("user_id"); row = _secure_session((data or {}).get("assessment_id", ""))
-    if not _secure_access(row, user_id): return
-    socketio.emit("stream_frame", data, to=f"assessment:{row.id}", include_self=False)
+    user_id = flask_session.get("user_id")
+    if not user_id: return
+    assessment_id = (data or {}).get("assessment_id")
+    if not assessment_id: return
+    socketio.emit("stream_frame", data, to=f"assessment:{assessment_id}", include_self=False)
     socketio.emit("stream_frame", data, to="reviewers", include_self=False)
 
 
