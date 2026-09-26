@@ -1,10 +1,10 @@
-# Engineering Decision Log — FREQUENCY (ProofForge Cyber)
+# Engineering Decision Log — FREQUENCY (Verifiable Proof-of-Work Engineering Discovery & Hiring Platform)
 
 **Team ID:** `HM26-C3B5` | **Track:** Cybersecurity Talent & Evidence Pipeline | **Scope:** Phase 2 Submission
 
 ---
 
-### Q1. What approach did we take, and what did we reject? (~150 words)
+### Q1. What approach did we take, and what did we reject? 
 
 We built an audited, deterministic evidence pipeline coupled with human reviewer authority and decoupled confidence scoring.  
 **Chosen Approach (Inputs → Logic → Output):**  
@@ -15,7 +15,7 @@ We seriously considered and prototyped an automated LLM-based vulnerability grad
 
 ---
 
-### Q2. Why did we reject it? What was the trade-off? (~165 words)
+### Q2. Why did we reject it? What was the trade-off? 
 
 We rejected automated LLM evaluation across four critical engineering dimensions:
 1. **Adversarial & Prompt Injection Vulnerability:** Penetration testing payloads inherently contain hostile syntax (SQL quotes, script tags, serialized blobs). An LLM evaluator is fundamentally vulnerable to prompt injection inside proof payloads that manipulate the model into granting perfect scores.
@@ -28,7 +28,7 @@ We knowingly accepted an **asynchronous review queue delay**. Candidates cannot 
 
 ---
 
-### Q3. What breaks at scale? (~155 words)
+### Q3. What breaks at scale? 
 
 When scaled across all engineering colleges and organizations across Mysuru and regional hubs—simulating 50,000 active candidates and 1,000 reviewers during synchronized campus placement drives—the first failure point is **database write contention and table scans during synchronized assessment submissions**.
 
