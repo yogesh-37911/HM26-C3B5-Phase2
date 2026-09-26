@@ -490,20 +490,35 @@ body{background:#f4f4f0}
   border: 2px dashed #c0d4bb;
   background: #f7faf5;
   border-radius: 8px;
-  padding: 18px 16px;
+  padding: 24px 18px;
   text-align: center;
   cursor: pointer;
   transition: all 0.2s ease;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   user-select: none;
+  position: relative;
 }
 .doc-upload-zone:hover {
   border-color: #4a7e41;
   background: #eef6ec;
 }
+.doc-upload-zone.dragging {
+  border-color: #275823;
+  border-width: 2.5px;
+  background: #e6f3e2;
+  transform: scale(1.01);
+  box-shadow: 0 4px 16px rgba(39, 88, 35, 0.18);
+}
+.doc-upload-zone * {
+  pointer-events: none;
+}
+.doc-upload-zone button {
+  pointer-events: auto;
+}
+
 .doc-attached-card {
   display: flex;
   align-items: center;

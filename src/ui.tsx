@@ -1,4 +1,4 @@
-import { useState, useEffect, type FormEvent } from 'react';
+import { useState, useEffect, useRef, type FormEvent } from 'react';
 import {
   Activity,
   AlertTriangle,
@@ -422,13 +422,20 @@ export default function App() {
     'Comprehensive methodology, clear reproduction steps, and sound remediation guidance.'
   );
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isDragging, setIsDragging] = useState(false);
+
+  const processSelectedFile = (file: File) => {
     if (!file) return;
 
-    const ext = file.name.split('.').pop()?.toLowerCase();
+    const ext = file.name.split('.').pop()?.toLowerCase() || '';
     if (ext !== 'pdf' && ext !== 'doc' && ext !== 'docx') {
-      notify('Please upload a PDF (.pdf) or Word document (.doc, .docx)');
+      notify('Invalid file format. Please upload a PDF (.pdf) or Word document (.doc, .docx)');
+      return;
+    }
+
+    if (file.size > 25 * 1024 * 1024) {
+      notify('File exceeds the 25 MB upload limit.');
       return;
     }
 
@@ -442,23 +449,37 @@ export default function App() {
         ...prev,
         fileName: file.name,
         fileSize: sizeFormatted,
-        fileType: (ext === 'docx' ? 'docx' : ext === 'doc' ? 'doc' : 'pdf'),
+        fileType: ext === 'docx' ? 'docx' : ext === 'doc' ? 'doc' : 'pdf',
         fileData: dataUrl,
       }));
       notify(`Document attached: ${file.name} (${sizeFormatted})`);
     };
+    reader.onerror = () => {
+      notify('Error reading file. Please try again.');
+    };
     reader.readAsDataURL(file);
   };
 
-  const attachSampleReportPdf = () => {
-    setFindingForm((prev) => ({
-      ...prev,
-      fileName: `${(auth?.name || 'Candidate').replace(/\s+/g, '_')}_Penetration_Test_Report.pdf`,
-      fileSize: '248 KB',
-      fileType: 'pdf',
-      fileData: SAMPLE_PDF_BASE64,
-    }));
-    notify('Sample penetration test report PDF attached!');
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!isDragging) setIsDragging(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+    const droppedFile = e.dataTransfer.files?.[0];
+    if (droppedFile) {
+      processSelectedFile(droppedFile);
+    }
   };
 
   const handleCandidateSubmitReport = async () => {
@@ -477,10 +498,10 @@ export default function App() {
       reproduction: findingForm.reproduction,
       impact: findingForm.impact,
       recommendation: findingForm.recommendation,
-      fileName: findingForm.fileName || `${(auth?.name || 'Candidate').replace(/\s+/g, '_')}_Security_Report.pdf`,
-      fileSize: findingForm.fileSize || '248 KB',
-      fileType: findingForm.fileType || 'pdf',
-      fileData: findingForm.fileData || SAMPLE_PDF_BASE64,
+      fileName: findingForm.fileName || undefined,
+      fileSize: findingForm.fileSize || undefined,
+      fileType: findingForm.fileType || undefined,
+      fileData: findingForm.fileData || undefined,
       status: 'pending',
       submittedAt: 'Just now',
     };
@@ -488,9 +509,9 @@ export default function App() {
     setCandidateReports((prev) => [newDoc, ...prev]);
     setReviewerDocuments((prev) => [newDoc, ...prev]);
     setModal('');
-    notify('Report & document uploaded! Sent to Reviewer Panel for check.');
+    notify('Report & finding submitted! Sent to Reviewer Panel for check.');
 
-    if (auth?.token) {
+    if (auth?.token && newDoc.fileName && newDoc.fileData) {
       try {
         await fetch(`${API_BASE}/api/documents`, {
           method: 'POST',
@@ -3362,33 +3383,33 @@ export default function App() {
                   </div>
 
                   {!findingForm.fileName ? (
-                    <label className="doc-upload-zone">
+                    <div
+                      className={`doc-upload-zone ${isDragging ? 'dragging' : ''}`}
+                      onDragOver={handleDragOver}
+                      onDragEnter={handleDragOver}
+                      onDragLeave={handleDragLeave}
+                      onDrop={handleDrop}
+                      onClick={() => fileInputRef.current?.click()}
+                    >
                       <input
+                        ref={fileInputRef}
                         type="file"
                         accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
                         style={{ display: 'none' }}
-                        onChange={handleFileUpload}
-                      />
-                      <Upload size={22} style={{ color: '#4a7e41' }} />
-                      <strong style={{ fontSize: 12, color: '#263823' }}>
-                        Click to browse or drop your PDF / Word report here
-                      </strong>
-                      <span style={{ fontSize: 11, color: '#687564' }}>
-                        Reviewers will inspect this document directly in the reviewer audit console
-                      </span>
-                      <button
-                        type="button"
-                        className="button secondary small-button"
-                        style={{ marginTop: 6, fontSize: 10, padding: '4px 10px' }}
-                        onClick={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          attachSampleReportPdf();
+                        onChange={(e) => {
+                          const f = e.target.files?.[0];
+                          if (f) processSelectedFile(f);
+                          e.target.value = '';
                         }}
-                      >
-                        <FileText size={11} /> 📄 Use Sample Pentest Report PDF
-                      </button>
-                    </label>
+                      />
+                      <Upload size={28} style={{ color: isDragging ? '#1e481b' : '#3d6f35' }} />
+                      <strong style={{ fontSize: 13, color: isDragging ? '#1e481b' : '#263823' }}>
+                        {isDragging ? 'Drop your PDF or Word document here!' : 'Drag & drop your PDF or Word document here'}
+                      </strong>
+                      <span style={{ fontSize: 11, color: '#5e6c59' }}>
+                        Or click to browse from your computer (Accepts .pdf, .docx, .doc up to 25 MB)
+                      </span>
+                    </div>
                   ) : (
                     <div className="doc-attached-card">
                       <div className="doc-attached-info">
@@ -3406,7 +3427,7 @@ export default function App() {
                           className="button secondary small-button"
                           onClick={() => downloadDocumentFile(findingForm.fileName, findingForm.fileData)}
                         >
-                          <Download size={11} /> Preview
+                          <Download size={11} /> Preview / Download
                         </button>
                         <button
                           type="button"
