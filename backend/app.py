@@ -703,8 +703,21 @@ def _secure_payload(row):
     candidate = db.session.get(User, row.candidate_id)
     reviewer = db.session.get(User, row.reviewer_id)
     events = SecureAssessmentEvent.query.filter_by(assessment_id=row.id).order_by(SecureAssessmentEvent.created_at.desc()).limit(100).all()
-    policy = db.session.get(SecureAssessmentPolicy, 1)
-    remaining = max(0, row.duration_minutes * 60 - int((datetime.now(timezone.utc).replace(tzinfo=None) - row.started_at).total_seconds())) if row.started_at and row.status == "active" else row.duration_minutes * 60
+    if row.status in ("submitted", "ended"):
+        remaining = 0
+    elif row.started_at and row.status == "active":
+        elapsed_sec = int((datetime.now(timezone.utc).replace(tzinfo=None) - row.started_at).total_seconds())
+        remaining = max(0, row.duration_minutes * 60 - elapsed_sec)
+        if remaining == 0:
+            row.status = "submitted"
+            row.ended_at = datetime.utcnow()
+            row.camera = row.microphone = row.screen = False
+            try:
+                db.session.commit()
+            except Exception:
+                db.session.rollback()
+    else:
+        remaining = max(0, row.duration_minutes * 60)
     return {
         "id": row.id, "candidate_id": row.candidate_id, "candidate_name": candidate.name if candidate else "Candidate",
         "reviewer_id": row.reviewer_id, "reviewer_name": reviewer.name if reviewer else "Reviewer",
@@ -1572,6 +1585,16 @@ def create_secure_assessment():
     if d.get("consent") is not True:
         return jsonify(error="Explicit consent is required before starting."), 400
     candidate_id = _get_current_user_id()
+    # If candidate has an existing active or pending session, resume it
+    existing_active = SecureAssessment.query.filter_by(candidate_id=candidate_id).filter(SecureAssessment.status.in_(("active", "pending", "paused"))).order_by(SecureAssessment.created_at.desc()).first()
+    if existing_active:
+        return jsonify(session=_secure_payload(existing_active)), 200
+
+    # Once an assessment has ended/submitted, it cannot be retaken ("once it ends can't go back")
+    existing_ended = SecureAssessment.query.filter_by(candidate_id=candidate_id).filter(SecureAssessment.status.in_(("submitted", "ended"))).order_by(SecureAssessment.created_at.desc()).first()
+    if existing_ended:
+        return jsonify(error="Your secure assessment has already concluded. As per evaluation policy, completed assessments cannot be retaken or restarted.", session=_secure_payload(existing_ended)), 403
+
     reviewer_email = os.getenv("SECURE_ASSESSMENT_REVIEWER_EMAIL", "samira.demo@example.invalid").lower()
     reviewer = User.query.filter_by(email=reviewer_email, role="reviewer").first()
     if not reviewer: return jsonify(error="No assigned reviewer is configured for secure assessments."), 503
@@ -1711,6 +1734,7 @@ def secure_ice_servers(session_id):
 
 
 _SOCKET_CLIENTS = {}
+_ASSESSMENT_SOCKET_USERS = {}
 
 
 @socketio.on("connect")
@@ -1737,30 +1761,52 @@ def socket_connect(auth=None):
 @socketio.on("disconnect")
 def socket_disconnect():
     _SOCKET_CLIENTS.pop(request.sid, None)
+    for assessment_users in _ASSESSMENT_SOCKET_USERS.values():
+        assessment_users.pop(request.sid, None)
 
 
 @socketio.on("join_assessment")
 def socket_join_assessment(data):
-    assessment_id = (data or {}).get("assessment_id", "")
-    if assessment_id:
-        join_room(f"assessment:{assessment_id}")
+    assessment_id = str((data or {}).get("assessment_id", ""))
+    info = _SOCKET_CLIENTS.get(request.sid, {})
+    row = _secure_session(assessment_id)
+    if not row or info.get("user_id") not in (row.candidate_id, row.reviewer_id):
+        return {"joined": False}
+    join_room(f"assessment:{assessment_id}")
+    _ASSESSMENT_SOCKET_USERS.setdefault(assessment_id, {})[request.sid] = info["user_id"]
+    if info["user_id"] == row.reviewer_id:
+        socketio.emit("reviewer_ready", {"assessment_id": assessment_id}, to=f"assessment:{assessment_id}", include_self=False)
     return {"joined": True}
+
+
+@socketio.on("candidate_ready")
+def socket_candidate_ready(data):
+    assessment_id = str((data or {}).get("assessment_id", ""))
+    info = _SOCKET_CLIENTS.get(request.sid, {})
+    row = _secure_session(assessment_id)
+    users = _ASSESSMENT_SOCKET_USERS.get(assessment_id, {})
+    reviewer_present = bool(row and info.get("user_id") == row.candidate_id and row.reviewer_id in users.values())
+    if reviewer_present:
+        socketio.emit("reviewer_ready", {"assessment_id": assessment_id}, to=request.sid)
+    return {"reviewer_present": reviewer_present}
 
 
 @socketio.on("join_reviewer")
 def socket_join_reviewer():
-    join_room("reviewers")
     info = _SOCKET_CLIENTS.get(request.sid, {})
-    if info.get("user_id"):
-        join_room(f"reviewer:{info['user_id']}")
-    socketio.emit("reviewer_ready", {"reviewer_id": info.get("user_id")})
+    user = db.session.get(User, info.get("user_id")) if info.get("user_id") else None
+    if not user or user.role != "reviewer":
+        return {"joined": False}
+    join_room(f"reviewer:{user.id}")
     return {"joined": True}
 
 
 @socketio.on("rtc_signal")
 def socket_rtc_signal(data):
-    assessment_id = (data or {}).get("assessment_id")
-    if not assessment_id:
+    assessment_id = str((data or {}).get("assessment_id", ""))
+    info = _SOCKET_CLIENTS.get(request.sid, {})
+    row = _secure_session(assessment_id)
+    if not row or info.get("user_id") not in (row.candidate_id, row.reviewer_id):
         return
     if data.get("kind") not in ("camera", "screen") or data.get("type") not in ("offer", "answer", "ice"):
         return
@@ -1769,16 +1815,6 @@ def socket_rtc_signal(data):
         return
     payload = {"assessment_id": assessment_id, "kind": data["kind"], "type": data["type"], "payload": signal}
     socketio.emit("rtc_signal", payload, to=f"assessment:{assessment_id}", include_self=False)
-    socketio.emit("rtc_signal", payload, to="reviewers", include_self=False)
-
-
-@socketio.on("stream_frame")
-def socket_stream_frame(data):
-    assessment_id = (data or {}).get("assessment_id")
-    if not assessment_id:
-        return
-    socketio.emit("stream_frame", data, to=f"assessment:{assessment_id}", include_self=False)
-    socketio.emit("stream_frame", data, to="reviewers", include_self=False)
 
 
 # ---------------------------------------------------------------------------

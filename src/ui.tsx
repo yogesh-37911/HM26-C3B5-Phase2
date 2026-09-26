@@ -496,9 +496,21 @@ export default function App() {
       const savedTime = localStorage.getItem(assessmentProgressKey(auth.email, 'timeLeft'));
       const savedSubmitted = localStorage.getItem(assessmentProgressKey(auth.email, 'submitted'));
       const savedSync = localStorage.getItem(assessmentProgressKey(auth.email, 'sync'));
+      const savedStartedAt = localStorage.getItem(assessmentProgressKey(auth.email, 'startedAt'));
       setCurrentQIndex(savedIndex ? Math.min(39, Math.max(0, Number(savedIndex))) : 0);
       setSelectedAnswers(savedAnswers ? JSON.parse(savedAnswers) : {});
-      setAssessmentTimeLeft(savedTime ? Math.min(1200, Math.max(0, Number(savedTime))) : 1200);
+      if (savedStartedAt && savedSubmitted !== 'true') {
+        const elapsed = Math.floor((Date.now() - Number(savedStartedAt)) / 1000);
+        const remaining = Math.max(0, 1200 - elapsed);
+        setAssessmentTimeLeft(remaining);
+        if (remaining <= 0) {
+          setAssessmentSubmitted(true);
+          saveAssessmentProgress(auth.email, 'submitted', 'true');
+          saveAssessmentProgress(auth.email, 'timeLeft', '0');
+        }
+      } else {
+        setAssessmentTimeLeft(savedSubmitted === 'true' ? 0 : savedTime ? Math.min(1200, Math.max(0, Number(savedTime))) : 1200);
+      }
       setAssessmentSubmitted(savedSubmitted === 'true');
       setAssessmentSyncStatus(savedSync === 'verified' ? 'verified' : savedSync === 'local' ? 'local' : 'none');
     } catch {
@@ -506,24 +518,29 @@ export default function App() {
     }
   }, [auth?.email, auth?.role]);
 
-  // 20-minute overall countdown timer with persistent remaining time
+  // Continuous timer ticker: runs in real-time, even if modal is closed, until 20 mins expire!
   useEffect(() => {
-    if (modal !== 'assessment' || assessmentSubmitted || assessmentTimeLeft <= 0) return;
-    const timer = setInterval(() => {
-      setAssessmentTimeLeft((prev) => {
-        if (prev <= 1) {
-          clearInterval(timer);
-          saveAssessmentProgress(auth?.email, 'timeLeft', '0');
-          void submitAssessment(true);
-          return 0;
-        }
-        const nextTime = prev - 1;
-        saveAssessmentProgress(auth?.email, 'timeLeft', String(nextTime));
-        return nextTime;
-      });
-    }, 1000);
+    if (!auth || auth.role !== 'Candidate' || assessmentSubmitted) return;
+    const startedAtStr = localStorage.getItem(assessmentProgressKey(auth.email, 'startedAt'));
+    if (!startedAtStr) return;
+
+    const tick = () => {
+      const startedAt = Number(startedAtStr);
+      const elapsed = Math.floor((Date.now() - startedAt) / 1000);
+      const remaining = Math.max(0, 1200 - elapsed);
+      setAssessmentTimeLeft(remaining);
+      saveAssessmentProgress(auth.email, 'timeLeft', String(remaining));
+      if (remaining <= 0) {
+        setAssessmentSubmitted(true);
+        saveAssessmentProgress(auth.email, 'submitted', 'true');
+        void submitAssessment(true);
+      }
+    };
+
+    tick();
+    const timer = setInterval(tick, 1000);
     return () => clearInterval(timer);
-  }, [modal, assessmentSubmitted, auth?.email]);
+  }, [auth?.email, auth?.role, assessmentSubmitted]);
 
   const formatTime = (seconds: number) => {
     const m = Math.floor(seconds / 60);
@@ -1031,6 +1048,10 @@ export default function App() {
                   <SecureAssessment role="Candidate" token={auth.token}
                     onLaunchAssessment={(durationMinutes) => {
                       const initialTime = Math.max(1, durationMinutes) * 60;
+                      const existingStart = localStorage.getItem(assessmentProgressKey(auth.email, 'startedAt'));
+                      if (!existingStart) {
+                        saveAssessmentProgress(auth.email, 'startedAt', String(Date.now()));
+                      }
                       setAssessmentTimeLeft(initialTime);
                       saveAssessmentProgress(auth.email, 'timeLeft', String(initialTime));
                       const firstUnanswered = ALL_ASSESSMENT_QUESTIONS.findIndex(q => selectedAnswers[q.id] === undefined);
@@ -1046,6 +1067,20 @@ export default function App() {
                     title="Security assessment"
                     sub="40 questions across four domains in sequential order · 20-minute overall timer · scored server-side."
                   />
+                  <div className="secure-disclaimer-card" style={{ marginBottom: 20 }}>
+                    <div className="secure-disclaimer-header">
+                      <AlertTriangle className="secure-disclaimer-icon" size={17} />
+                      <span>CRITICAL CANDIDATE NOTICE: STRICT CONTINUOUS TIMER &amp; SINGLE ATTEMPT</span>
+                    </div>
+                    <p>
+                      Please read carefully before starting your security assessment:
+                    </p>
+                    <ul>
+                      <li><strong>Continuous Live Timer:</strong> Once the assessment begins, <strong>the timer DOES NOT STOP</strong>. Closing this modal, navigating away from this tab, or exiting your browser will <u>NOT pause or stop the timer</u>. It counts down continuously in real-time until the 20 minutes expire.</li>
+                      <li><strong>Single Attempt (Cannot Go Back):</strong> Once the timer expires or the assessment is submitted, <strong>you CANNOT go back or retake the assessment</strong>. Your responses are permanently recorded.</li>
+                      <li><strong>One Uninterrupted Session:</strong> Ensure you are ready and have a stable internet connection before beginning.</li>
+                    </ul>
+                  </div>
                   <div className="assessment-total">
                     <div>
                       <strong>40</strong>
@@ -1063,6 +1098,12 @@ export default function App() {
                     <button
                       className="button primary"
                       onClick={() => {
+                        if (!assessmentSubmitted) {
+                          const existingStart = localStorage.getItem(assessmentProgressKey(auth.email, 'startedAt'));
+                          if (!existingStart) {
+                            saveAssessmentProgress(auth.email, 'startedAt', String(Date.now()));
+                          }
+                        }
                         // Resume from first unanswered question or 0
                         const firstUnanswered = ALL_ASSESSMENT_QUESTIONS.findIndex(q => selectedAnswers[q.id] === undefined);
                         setCurrentQIndex(firstUnanswered >= 0 ? firstUnanswered : 0);
@@ -1097,6 +1138,12 @@ export default function App() {
                           key={secName}
                           style={{ cursor: 'pointer' }}
                           onClick={() => {
+                            if (!assessmentSubmitted) {
+                              const existingStart = localStorage.getItem(assessmentProgressKey(auth.email, 'startedAt'));
+                              if (!existingStart) {
+                                saveAssessmentProgress(auth.email, 'startedAt', String(Date.now()));
+                              }
+                            }
                             setCurrentQIndex(i * 10);
                             setModal('assessment');
                           }}
@@ -2731,28 +2778,15 @@ export default function App() {
                         </p>
                       </div>
 
-                      <div className="modal-actions" style={{ justifyContent: 'space-between', marginTop: 10 }}>
-                        <button
-                          className="button secondary"
-                          onClick={() => {
-                            setAssessmentSubmitted(false);
-                            setSelectedAnswers({});
-                            setCurrentQIndex(0);
-                            setAssessmentTimeLeft(1200);
-                            try {
-                              ['submitted', 'answers', 'qIndex', 'timeLeft', 'sync'].forEach(field => localStorage.removeItem(assessmentProgressKey(auth.email, field)));
-                            } catch {}
-                            setAssessmentSyncStatus('none');
-                            notify('Assessment reset — starting fresh 20-min session from Question #1');
-                          }}
-                        >
-                          <RotateCcw size={14} /> Retake assessment
-                        </button>
+                      <div className="modal-actions" style={{ justifyContent: 'space-between', alignItems: 'center', marginTop: 10 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#985743', fontSize: 12, fontWeight: 600, background: '#fdf2ed', padding: '6px 12px', borderRadius: 6, border: '1px solid #fed7c7' }}>
+                          <LockKeyhole size={14} /> Single Attempt Policy: Once an assessment ends, you cannot retake it or go back.
+                        </div>
                         <button
                           className="button primary"
                           onClick={() => {
                             setModal('');
-                            notify('Assessment progress saved to profile');
+                            notify('Assessment score report saved to profile');
                           }}
                         >
                           <Check size={14} /> Return to dashboard
@@ -2779,10 +2813,11 @@ export default function App() {
                         </div>
                         <div
                           className={`assessment-timer ${isWarning ? 'warning' : ''}`}
-                          title="Total remaining time for all 40 questions (Persisted)"
+                          title="Total remaining time for all 40 questions (Continuous real-time timer · does not stop if closed)"
                         >
                           <Clock3 size={13} />
                           <span>{formatTime(assessmentTimeLeft)}</span>
+                          <span style={{ fontSize: 9.5, opacity: 0.85, fontWeight: 600, marginLeft: 4 }}>• NON-STOP</span>
                         </div>
                       </div>
 
