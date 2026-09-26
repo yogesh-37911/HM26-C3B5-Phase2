@@ -1,49 +1,116 @@
-# ProofForge Cyber
+# FREQUENCY (ProofForge Cyber) · Verified Cybersecurity Talent & Evidence Pipeline
+
+> **Hackathon Team ID:** `HM26-C3B5`  
+> **Repository:** [https://github.com/yogesh-37911/HM26-C3B5-Phase2.git](https://github.com/yogesh-37911/HM26-C3B5-Phase2.git)  
+> **Resource Index:** [resource.md](resource.md) | **AI Disclosure:** [ai.md](ai.md)  
+> **Decision Log:** [docs/decision-log.md](docs/decision-log.md) | `output/pdf/HM26-C3B5_decision-log.pdf`
+
+---
 
 ## 1. Problem Understanding
 
-Cybersecurity hiring often relies on certificates and self-reported tools, which say little about how a person validates a vulnerability or communicates a fix. ProofForge Cyber turns authorized lab work into reviewable evidence: candidates document findings, reviewers verify them, and recruiters inspect the proof behind capability signals.
+### Selected Sub-Problem: The Credential Inflation & Proof Gap in Cybersecurity Hiring
+In technical hiring across Mysuru and the broader Indian engineering ecosystem, cybersecurity evaluation suffers from a fundamental trust deficit. Traditional resumes, multiple-choice certifications (e.g., CEH, Security+), and self-reported claimed tools reveal nothing about whether a candidate can systematically discover an authorization flaw, analyze impact, or communicate a defensible remediation. Recruiters face hundreds of inflated profiles, while high-capability candidates with hands-on lab depth struggle to stand out without brand-name credentials.
 
-## 2. Target Users & Cybersecurity Context
+### What "Solved" Looks Like
+A solved state replaces unverified claims with an **audited, end-to-end evidence pipeline**:
+1. Candidates perform hands-on security tasks in contained labs (BOLA/IDOR, Reflected XSS, SQL Injection, Session Management) and undergo a strict 20-minute, 40-question technical baseline assessment.
+2. Candidate findings and pentest reports (PDF/DOCX) undergo rigorous **human reviewer verification**, where reviewers score rubrics across 7 dimensions and challenge candidates through interactive technical defense questioning.
+3. Every verified action generates an ungameable **9-domain Security DNA profile**, cleanly decoupling raw capability (0–100) from proof confidence (0–100%) and tracking historical finding accuracy.
+4. Recruiters discover talent strictly through evidence thresholds, inspect sanitized reproduction proof (safe curl payloads with credentials redacted), and invite validated candidates to **Virtual Zoom** or **On-Spot In-Person Whiteboard** interviews with integrated venue mapping.
 
-Candidates practice in controlled training labs and build a finding portfolio. Reviewers inspect evidence, ask questions, and retain final score authority. Recruiters discover candidates through verified capability. All practical examples are restricted to explicitly authorized, isolated training targets. Demo profiles and records are synthetic.
+---
+
+## 2. Target Users & Context
+
+### Personas
+- **The Candidate (e.g., Ananya Rao - Aspiring AppSec / PenTest Engineer):**  
+  Practices in controlled security labs, uploads vulnerability documentation and proof artifacts, sits for timed technical assessments under non-stoppable countdown constraints, and responds to reviewer defense prompts.
+- **The Reviewer (e.g., Samira Khan - Senior Security Auditor):**  
+  Conducts evidence audits on submitted candidate findings, verifies reproduction steps, executes anti-collision SHA-256 integrity checks, evaluates defense answers, and certifies assessment scorecards. AI suggestions in the review console are strictly advisory.
+- **The Recruiter (e.g., Jordan Davis - Security Engineering Hiring Lead):**  
+  Searches pre-verified candidates using strict capability, confidence, and domain filters; inspects sanitized proof chains without viewing raw production secrets; and schedules interviews via Virtual Zoom or On-Spot Office sessions.
+
+### Real Constraints Addressed
+- **Device & Bandwidth Constraints:** Low-overhead React SPA with local-storage session failover and optimistic UI updates, ensuring flawless operation even over intermittent Tier-2/3 network connections.
+- **Integrity & Anti-Gaming Constraints:** Strict non-stoppable 20-minute assessment timer stored in secure storage, server-side scoring where correct answer keys never leak to the client, and SHA-256 evidence hashing to flag collision attacks between cohorts.
+- **Sanitization & Responsible Disclosure:** Automated redaction of authorization headers, tokens, and PII in recruiter views; contained synthetic lab targets preventing unauthorized scanning of external hosts.
+
+---
 
 ## 3. Solution Overview
 
-1. Candidate selects a lab and reviews safe tool references.
-2. Candidate documents a vulnerability, evidence, reproduction, impact and remediation.
-3. A reviewer requests a technical defense, evaluates the answers and independently verifies or rejects the finding.
-4. Verified work and server-scored assessments contribute to the nine-domain Security DNA with separate capability and proof-confidence values.
-5. Recruiters set evidence thresholds, see why a candidate matches, inspect sanitized proof and send interview invitations.
+FREQUENCY operates as a coordinated 5-step evidence lifecycle across Candidate, Reviewer, and Recruiter workspaces:
 
-Screenshots: the MVP includes a live responsive interface; run it using `npm run dev` and capture the candidate dashboard and recruiter discovery views for a presentation. No pre-rendered screenshot is represented as a running product capture.
+```
+[Candidate Lab / Test] ──> [Structured Evidence Upload] ──> [Reviewer Human Audit & Defense] ──> [Ungameable Security DNA] ──> [Recruiter Proof & Multi-Mode Invite]
+```
+
+1. **Step 1: Baseline Assessment & Hands-On Practice**  
+   The candidate begins with a clean slate (0 capability score, 0 verified findings). They enter a proctored 40-question technical assessment across 4 core domains with a non-stoppable 20-minute countdown, establishing their initial capability baseline.
+2. **Step 2: Structured Finding & Report Upload**  
+   Candidates execute targeted testing in simulated environments (API Authorization BOLA, Reflected XSS, SQLi, Session Security). In the Reports section, candidates drag-and-drop industry-standard vulnerability reports (PDF/Word) or submit structured finding metadata (vulnerability component, reproduction steps, sanitized curl requests, and remediation advice).
+3. **Step 3: Human Reviewer Audit & Interactive Defense**  
+   Submissions enter the Reviewer queue. The reviewer inspects evidence integrity (SHA-256 hash collision checks), scores the finding across a 7-point rubric (Recon, Finding, Validation, Evidence, Impact, Remediation, Report Quality), and issues defense questions that the candidate must answer before verification.
+4. **Step 4: Dynamic Security DNA & Proof Chain Computation**  
+   Upon reviewer certification, the system calculates the candidate's 9-domain Security DNA. Capability score and proof confidence are computed mathematically, ensuring that candidates who pass both assessments and lab defenses achieve high proof confidence (90%+), while unverified accounts remain at 0.
+5. **Step 5: Recruiter Discovery & Multi-Format Interview Scheduling**  
+   Recruiters view top matched candidates dynamically. They inspect sanitized proof cards, review verified lab counts, and dispatch interview invitations. Recruiters can choose between **🌐 Online / Virtual Meeting (Zoom)** and **🏢 Offline / On-Spot Meeting (In-Person Office)** with automated Google Maps directions and room assignment.
+
+---
 
 ## 4. Architecture
 
-ProofForge is a React client backed by a modular Flask API and PostgreSQL data store. See [docs/architecture.md](docs/architecture.md).
+FREQUENCY is engineered as a responsive React 18 / TypeScript single-page application communicating via RESTful JSON APIs with a modular Flask 3 backend backed by PostgreSQL (with SQLite zero-setup dev fallback) and deterministic SHA-256 evidence hashing.
 
-The Security DNA, defense and recruiter proof endpoints are documented in [docs/api.md](docs/api.md).
+See [docs/architecture.md](docs/architecture.md) for full architectural specifications, component boundaries, and database schema.
 
+---
 
 ## 5. Tech Stack & AI Usage
 
-React, Vite, TypeScript, Flask, SQLAlchemy, PostgreSQL, JWT, Docker Compose for local data services. The review console contains a deterministic illustrative AI advisory; it does not call an AI service or make verification or hiring decisions. See [ai.md](ai.md).
+### Core Technologies
+- **Frontend:** React 18, TypeScript, Vite 8, Lucide React, Vanilla CSS design system.
+- **Backend:** Python 3.10+, Flask 3.x, Flask-SQLAlchemy 3.1, Flask-JWT-Extended, Flask-Limiter.
+- **Database & Storage:** PostgreSQL 16 (production container) / SQLite 3 (local dev), SQLAlchemy ORM.
+- **Deployment:** Render Blueprint (`render.yaml`), Docker Compose (`docker-compose.yml`).
+
+### AI Usage Disclosure
+See [ai.md](ai.md) for full disclosure. AI (Claude/Gemini) was used during development for code scaffolding, typing, and generating assessment question pools. **At runtime, no non-deterministic AI or LLM is in the critical decision loop.** The reviewer AI advisory is a deterministic template designed to assist human auditors; all verification, rubric scoring, and hiring decisions remain strictly human-driven.
+
+---
 
 ## 6. Decision Log (Summary)
 
-One modular API and a controlled demo workflow keep the hackathon build understandable. A contained training-target placeholder is used instead of a user-controlled arbitrary scanner or public vulnerable deployment. See [resource.md](resource.md).
+The complete 1-page Decision Log is detailed in [docs/decision-log.md](docs/decision-log.md) and compiled to [output/pdf/HM26-C3B5_decision-log.pdf](output/pdf/HM26-C3B5_decision-log.pdf). Below is the mandatory executive summary:
+
+- **Q1. What approach did we take, and what did we reject?**  
+  *Chosen Technical Approach:* A **Deterministic Structured Evidence Pipeline with Human Reviewer Rubric and Decoupled Confidence Scoring** (Inputs: candidate HTTP evidence payloads + 40-question answers → Logic: SHA-256 hash collision checks + 7-dimensional reviewer rubric + 9-domain weighted capability matrix → Output: Verified Security DNA & sanitized recruiter proof).  
+  *Rejected Alternative:* A **Fully Automated LLM Vulnerability Grader and Code Evaluator**. While attractive for instant 24/7 automated grading and zero human overhead, it was rejected due to vulnerability to prompt injection, non-deterministic scoring variance, and high hallucination risk on novel exploits.
+- **Q2. Why did we reject it? What was the trade-off?**  
+  We evaluated both across 4 dimensions: (1) *Spam & Cheat Resistance* (LLMs fail against adversarial payloads; human defense review succeeds), (2) *Legal & Technical Defensibility* (recruiters require auditable proof, not black-box AI scores), (3) *Build Complexity in 72h* (deterministic Python logic is 100% testable and predictable), and (4) *Cost*.  
+  *Accepted Trade-off:* We knowingly accepted that human verification creates an **asynchronous queue latency** (candidates wait for reviewer audit rather than receiving instant validation). This trade-off was deliberate to protect recruiter trust.
+- **Q3. What breaks at scale?**  
+  During cohort-wide testing surges (e.g., thousands of simultaneous campus assessments), the first failure point is **database write contention and table scans on serialized assessment scoring**. 50,000 candidates submitting 40 answers concurrently produces 2,000,000 row writes and unindexed SHA-256 evidence scans, choking the connection pool.  
+  *Immediate Architectural Fix:* Move assessment scoring to an asynchronous Redis/Celery task queue, shard submissions by `(candidate_id, section_id)`, and implement a Redis Bloom filter for $O(1)$ duplicate evidence collision pre-filtering before relational persistence.
+
+See [resource.md](resource.md) for complete submission links and external verification hashes.
+
+---
 
 ## 7. Setup & Run
 
-Requires Node.js 20+, Python 3.10+, and optionally Docker Desktop for PostgreSQL.
+### Quick Start (Local Development)
 
+#### 1. Frontend Setup
 ```powershell
+# In repository root
 npm install
 npm run dev
 ```
+The client will launch at `http://localhost:5173`.
 
-In another terminal:
-
+#### 2. Backend Setup
 ```powershell
 cd backend
 py -m venv .venv
@@ -51,15 +118,24 @@ py -m venv .venv
 pip install -r requirements.txt
 py app.py
 ```
+The Flask API starts at `http://127.0.0.1:5000` with local SQLite initialized automatically.
 
-The API uses SQLite for zero-setup local demonstration. To use PostgreSQL, start `docker compose up -d db`, copy `.env.example` to `.env`, and set `DATABASE_URL`, a private `JWT_SECRET_KEY`, and a 12+ character private `DEMO_PASSWORD` (or role-specific demo passwords). Seed accounts with `python seed_demo.py` in `backend`. See [docs/setup.md](docs/setup.md).
+#### 3. Seed Demo Accounts
+```powershell
+cd backend
+py seed_demo.py
+```
+Pre-configures demo accounts (`Candidate`, `Reviewer`, `Recruiter`). Candidate `Ananya Rao` is seeded with a pristine clean slate (0 scores, 0 findings).
 
-### Deploy from GitHub to Render
+For PostgreSQL configuration, environment variables, and Docker Compose setup, see [docs/setup.md](docs/setup.md).
 
-Push the repository to GitHub, then create a **Blueprint** in Render and select that repository. The root [render.yaml](render.yaml) defines the static frontend, Flask API, and PostgreSQL database. After deployment, check the API service's `/api/health` route and open the static-site URL. Authentication, candidate scores, and standard timed assessments use the API; other existing workspace areas still contain synthetic demonstration data. See [docs/deployment.md](docs/deployment.md).
+---
 
-The login page uses role-scoped API authentication. Demo workspace data remains synthetic except where the UI explicitly saves records to the API.
+## 8. Known Limitations & Roadmap
 
-## 8. Known Limitations
+### Top 3 Limitations
+1. **Simulated Lab Targets:** Labs provide realistic HTTP request/response flows and guided attack surfaces, but do not provision isolated dynamic Docker containers per user.
+2. **Regex-Based Proof Redaction:** Recruiter evidence sanitization uses pattern matching (JWTs, auth headers, email addresses) rather than an isolated NLP/DLP redaction engine.
+3. **In-Memory Rate Limiting:** Rate limiting on assessment endpoints uses in-memory tracking; production multi-instance deployments require Redis-backed distributed limits.
 
-Labs are contained training-flow demonstrations, not provisioned vulnerable Docker targets. See the [limitations and roadmap](docs/limitations.md) before production use.
+See [docs/limitations.md](docs/limitations.md) for the complete engineering roadmap.
