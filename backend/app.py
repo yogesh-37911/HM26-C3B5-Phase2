@@ -202,6 +202,14 @@ class Audit(db.Model):
     created = db.Column(db.DateTime, server_default=db.func.now())
 
 
+class RecruiterCandidateApproval(db.Model):
+    """A reviewer explicitly passed this candidate into the recruiter roster."""
+    id = db.Column(db.Integer, primary_key=True)
+    candidate_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, unique=True, index=True)
+    reviewer_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    approved_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+
+
 class SecureAssessment(db.Model):
     id = db.Column(db.String(36), primary_key=True, default=lambda: str(__import__('uuid').uuid4()))
     candidate_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, index=True)
@@ -1458,7 +1466,7 @@ def respond(iid: int):
 @app.get("/api/recruiter/candidates")
 @role_required("recruiter")
 def candidates():
-    """Evidence-first recruiter matching; skills only count when backed by verified work."""
+    """Return only candidates explicitly passed by a reviewer."""
     try:
         min_capability = max(0, min(100, int(request.args.get("min_capability", 0))))
         min_confidence = max(0, min(100, int(request.args.get("min_proof_confidence", 0))))
@@ -1468,7 +1476,11 @@ def candidates():
     except ValueError:
         return jsonify(error="Score filters must be integers from 0 to 100."), 400
     results = []
-    for u in User.query.filter_by(role="candidate").limit(100).all():
+    approvals = RecruiterCandidateApproval.query.order_by(RecruiterCandidateApproval.approved_at.desc()).limit(100).all()
+    for approval in approvals:
+        u = db.session.get(User, approval.candidate_id)
+        if not u or u.role != "candidate":
+            continue
         dna = _skill_fingerprint(u.id)
         skill_score = next((s["capability"] for s in dna["skills"] if s["skill"].casefold() == skill.casefold()), None) if skill else None
         if dna["overall_capability"] < min_capability or dna["proof_confidence"] < min_confidence or dna["finding_accuracy"] < min_accuracy:
@@ -1488,12 +1500,45 @@ def candidates():
             "duplicate_flags": dna["duplicate_flags"], "report_quality": dna["report_quality"],
             "technical_defense_score": dna["technical_defense_score"], "reviewer_verification": dna["reviewer_verification"],
             "verified_labs": sorted({s.lab for s in verified_rows}), "verified_tools": [], "why_matched": why})
-    return jsonify(candidates=results, match_basis="reviewer-verified findings and server-scored evidence; claimed tools excluded")
+    return jsonify(candidates=results, match_basis="reviewer-approved candidates only; scores come from server-side reviewed evidence")
+
+
+@app.get("/api/reviewer/candidate-approvals")
+@role_required("reviewer")
+def reviewer_candidate_approvals():
+    approved_ids = {row.candidate_id for row in RecruiterCandidateApproval.query.all()}
+    candidates = User.query.filter_by(role="candidate").order_by(User.name.asc()).all()
+    return jsonify(candidates=[{"id": user.id, "name": user.name, "email": user.email, "approved": user.id in approved_ids} for user in candidates])
+
+
+@app.post("/api/reviewer/candidate-approvals")
+@role_required("reviewer")
+def update_reviewer_candidate_approval():
+    data = request.get_json(silent=True) or {}
+    candidate_id = data.get("candidate_id")
+    email = str(data.get("email", "")).strip().lower()
+    approved = data.get("approved")
+    if not isinstance(approved, bool):
+        return jsonify(error="approved must be true or false."), 400
+    candidate = db.session.get(User, candidate_id) if isinstance(candidate_id, int) else None
+    if candidate is None and email:
+        candidate = User.query.filter_by(email=email, role="candidate").first()
+    if not candidate or candidate.role != "candidate":
+        return jsonify(error="Candidate account not found."), 404
+    existing = RecruiterCandidateApproval.query.filter_by(candidate_id=candidate.id).first()
+    if approved and not existing:
+        db.session.add(RecruiterCandidateApproval(candidate_id=candidate.id, reviewer_id=_get_current_user_id()))
+    elif not approved and existing:
+        db.session.delete(existing)
+    db.session.commit()
+    return jsonify(candidate={"id": candidate.id, "name": candidate.name, "email": candidate.email, "approved": approved})
 
 
 @app.get("/api/recruiter/candidates/<int:candidate_id>/proof")
 @role_required("recruiter")
 def recruiter_proof(candidate_id: int):
+    if not RecruiterCandidateApproval.query.filter_by(candidate_id=candidate_id).first():
+        return jsonify(error="Candidate has not been passed to the recruiter roster."), 404
     candidate = db.session.get(User, candidate_id)
     if not candidate or candidate.role != "candidate":
         return jsonify(error="Candidate not found."), 404
@@ -1922,6 +1967,7 @@ def list_documents():
                 "id": doc.id,
                 "candidate_id": doc.candidate_id,
                 "candidate_name": doc.candidate_name,
+                "candidate_email": db.session.get(User, doc.candidate_id).email if doc.candidate_id and db.session.get(User, doc.candidate_id) else "",
                 "title": doc.title,
                 "lab": doc.lab,
                 "severity": doc.severity,
@@ -2007,28 +2053,24 @@ def review_document(doc_id: int):
 
 
 @app.post("/api/demo/reset")
+@role_required("recruiter")
 def reset_demo_candidate():
-    """Reset all roles (Candidate, Reviewer, Recruiter) to a completely clean and fresh initial demo baseline."""
-    ananya = User.query.filter_by(email="ananya.demo@example.invalid").first()
-    if ananya:
-        AssessmentResult.query.filter_by(candidate_id=ananya.id).delete()
-        Submission.query.filter_by(candidate_id=ananya.id).delete()
-        CandidateDocument.query.filter_by(candidate_id=ananya.id).delete()
-        Invitation.query.filter(Invitation.candidate_id == ananya.id).delete()
-        old_sessions = [s.id for s in SecureAssessment.query.filter_by(candidate_id=ananya.id).all()]
-        if old_sessions:
-            SecureAssessmentEvent.query.filter(SecureAssessmentEvent.assessment_id.in_(old_sessions)).delete(synchronize_session=False)
-            SecureAssessment.query.filter(SecureAssessment.id.in_(old_sessions)).delete(synchronize_session=False)
-
-    # Clean any orphaned or dynamic test candidate documents uploaded during testing
-    CandidateDocument.query.filter(CandidateDocument.candidate_id.is_(None)).delete()
-    # Reset any dynamic recruiter invitations beyond the seeded baseline
-    Invitation.query.filter(Invitation.message.ilike("%We reviewed your verified%")).delete()
-
+    """Recruiter-only full wipe of candidate outcomes and role workflow data; preserve accounts and target/policy setup."""
+    SecureAssessmentEvent.query.delete(synchronize_session=False)
+    SecureAssessment.query.delete(synchronize_session=False)
+    DefenseQuestion.query.delete(synchronize_session=False)
+    ReviewerMetrics.query.delete(synchronize_session=False)
+    Submission.query.delete(synchronize_session=False)
+    AssessmentResult.query.delete(synchronize_session=False)
+    CandidateDocument.query.delete(synchronize_session=False)
+    Invitation.query.delete(synchronize_session=False)
+    RecruiterCandidateApproval.query.delete(synchronize_session=False)
+    Audit.query.delete(synchronize_session=False)
     db.session.commit()
     return jsonify(
-        message="Full platform demo reset complete: Candidate, Reviewer, and Recruiter data freshly reset.",
-        status="clean"
+        message="Candidate results, review records, secure assessment data, recruiter approvals, interviews, and audit entries were reset. User accounts were preserved.",
+        status="clean",
+        reset_at=datetime.utcnow().isoformat() + "Z",
     )
 
 

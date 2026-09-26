@@ -314,10 +314,6 @@ const PAGE_ICON_MAP: Record<string, React.ElementType> = {
   'Saved Candidates': BookmarkCheck,
 };
 
-// Valid minimal PDF Data URL for instant sample attachment testing
-const SAMPLE_PDF_BASE64 =
-  'data:application/pdf;base64,JVBERi0xLjQKJcTl8uXrp/Og0MTGCjQgMCBvYmoKPDwgL0xlbmd0aCAxMTAgL0ZpbHRlciAvRmxhdGVEZWNvZGUgPj4Kc3RyZWFtCnicK1QwVDBU0FWwsLQwtjCwVHBV8AlxFHA0VTDg4lIwVDC3MDHk5XJwVIg21TXUNDDVMzDRNTQ20DMx0TUy0zXUNTDWNTTV1TMw09M1MjHQBQD7/A1CCmVuZHN0cmVhbQplbmRvYmoKMiAwIG9iago8PCAvVHlwZSAvUGFnZSAvUGFyZW50IDMgMCBSIC9NZWRpYUJveCBbMCAwIDYxMiA3OTJdIC9Db250ZW50cyA0IDAgUiAvUmVzb3VyY2VzIDw8IC9Gb250IDw8IC9GMSA1IDAgUiA+PiA+PiA+PgplbmRvYmoKNSAwIG9iago8PCAvVHlwZSAvRm9udCAvU3VidHlwZSAvVHlwZTEgL0Jhc2VGb250IC9IZWx2ZXRpY2EgPj4KZW5kb2JqCjMgMCBvYmoKPDwgL1R5cGUgL1BhZ2VzIC9LaWRzIFsyIDAgUl0gL0NvdW50IDEgPj4KZW5kb2JqCjEgMCBvYmoKPDwgL1R5cGUgL0NhdGFsb2cgL1BhZ2VzIDMgMCBSID4+CmVuZG9iagp4cmVmCjAgNgowMDAwMDAwMDAwIDY1NTM1IGYgCjAwMDAwMDA0MDYgMDAwMDAgbiAKMDAwMDAwMDE5NCAwMDAwMCBuIAowMDAwMDAwMzUyIDAwMDAwIG4gCjAwMDAwMDAwMTUgMDAwMDAgbiAKMDAwMDAwMDI5OCAwMDAwMCBuIAp0cmFpbGVyCjw8IC9TaXplIDYgL1Jvb3QgMSAwIFIgPj4Kc3RhcnR4cmVmCjQ1NQolJUVPRgo=';
-
 function downloadDocumentFile(fileName: string, fileData: string) {
   if (!fileData) return;
   const link = document.createElement('a');
@@ -327,54 +323,6 @@ function downloadDocumentFile(fileName: string, fileData: string) {
   link.click();
   document.body.removeChild(link);
 }
-
-const INITIAL_REVIEWER_DOCUMENTS: CandidateDocItem[] = [
-  {
-    id: 'DOC-101',
-    candidateName: 'Rohan Mehta',
-    candidateEmail: 'rohan.demo@example.invalid',
-    title: 'API Authorization & BOLA Security Assessment',
-    lab: 'API Authorization Lab',
-    severity: 'High',
-    category: 'Web Security',
-    component: 'GET /api/v1/orders/{order_id}',
-    description: 'Tested insecure direct object reference vulnerability permitting horizontal authorization bypass.',
-    evidence: 'GET /api/v1/orders/8841 HTTP/1.1 -> 200 OK (sanitized token)',
-    reproduction: '1. Injected alternate ID parameter. 2. Received unauthorized order payload.',
-    impact: 'Exposure of customer PII and purchasing records.',
-    recommendation: 'Bind account claim to database query filter on server.',
-    fileName: 'Rohan_Mehta_API_Authorization_Report.pdf',
-    fileSize: '342 KB',
-    fileType: 'pdf',
-    fileData: SAMPLE_PDF_BASE64,
-    status: 'verified',
-    score: 88,
-    submittedAt: '3 hours ago',
-    reviewerFeedback: 'Accurate classification, well-sanitized request headers, and reproducible curl commands.',
-    reviewedBy: 'Samira Khan',
-  },
-  {
-    id: 'DOC-102',
-    candidateName: 'Karan Shah',
-    candidateEmail: 'karan.demo@example.invalid',
-    title: 'Cross-Site Scripting (XSS) in Search Endpoint',
-    lab: 'Reflected XSS Lab',
-    severity: 'Medium',
-    category: 'Client-Side Security',
-    component: 'GET /search?q=',
-    description: 'Context-breaking script tag reflected in HTML response without output encoding.',
-    evidence: 'GET /search?q=%3Cscript%3E...%3C%2Fscript%3E',
-    reproduction: '1. Injected script tag into search query parameter.',
-    impact: 'Session token exfiltration and DOM manipulation on vulnerable client.',
-    recommendation: 'Context-aware contextual HTML entity encoding and strict CSP header.',
-    fileName: 'Karan_Shah_XSS_Audit_Report.docx',
-    fileSize: '215 KB',
-    fileType: 'docx',
-    fileData: SAMPLE_PDF_BASE64,
-    status: 'pending',
-    submittedAt: '5 hours ago',
-  },
-];
 
 const INITIAL_INTERVIEWS: {
   id: string;
@@ -431,7 +379,7 @@ export default function App() {
   });
 
   // Reviewer Candidate Documents Queue (pre-seeded with non-Ananya candidates so reviewer has context, but 0 for Ananya)
-  const [reviewerDocuments, setReviewerDocuments] = useState<CandidateDocItem[]>(INITIAL_REVIEWER_DOCUMENTS);
+  const [reviewerDocuments, setReviewerDocuments] = useState<CandidateDocItem[]>([]);
 
   // Reviewer Document Review Modal State
   const [reviewingDoc, setReviewingDoc] = useState<CandidateDocItem | null>(null);
@@ -675,7 +623,7 @@ export default function App() {
 
     if (updatedStatus === 'verified') {
       setVerified(true);
-      setPassedCandidates((prev) => Array.from(new Set([...prev, reviewingDoc.candidateName])));
+      void updateCandidateApproval(reviewingDoc.candidateName, true);
     }
 
     if (auth?.token && reviewingDoc.id && !isNaN(Number(reviewingDoc.id))) {
@@ -760,34 +708,19 @@ export default function App() {
   // Reviewer Flagged Submissions & Labs Management
   const [flaggedFindings, setFlaggedFindings] = useState<
     { id: string; candidate: string; finding: string; lab: string; reason: string; status: string }[]
-  >([
-    {
-      id: 'FLG-104',
-      candidate: 'Rohan Mehta',
-      finding: 'SSRF via Webhook',
-      lab: 'Cloud SSRF Lab',
-      reason: 'Evidence hash collision with previous cohort submission',
-      status: 'PENDING_AUDIT',
-    },
-  ]);
+  >([]);
 
   const [activeReviewerLabs, setActiveReviewerLabs] = useState<
     { name: string; tag: string; activeInstances: number; status: 'HEALTHY' | 'DEGRADED'; cpu: string; memory: string; difficulty: string }[]
-  >([
-    { name: 'API Authorization Lab', tag: 'BOLA / IDOR', activeInstances: 4, status: 'HEALTHY', cpu: '12%', memory: '240MB', difficulty: 'Intermediate' },
-    { name: 'Reflected XSS Lab', tag: 'Web Sec', activeInstances: 2, status: 'HEALTHY', cpu: '8%', memory: '180MB', difficulty: 'Beginner' },
-    { name: 'SQL Injection Lab', tag: 'Database', activeInstances: 3, status: 'HEALTHY', cpu: '15%', memory: '310MB', difficulty: 'Intermediate' },
-    { name: 'Session Management Lab', tag: 'Auth', activeInstances: 1, status: 'HEALTHY', cpu: '6%', memory: '150MB', difficulty: 'Beginner' },
-    { name: 'Network Recon Lab', tag: 'Infra', activeInstances: 5, status: 'HEALTHY', cpu: '22%', memory: '420MB', difficulty: 'Advanced' },
-    { name: 'Cloud IAM Escalation', tag: 'Cloud', activeInstances: 2, status: 'HEALTHY', cpu: '11%', memory: '260MB', difficulty: 'Advanced' },
-  ]);
+  >([]);
 
   // Reviewer Candidate Validation & Endorsement to Recruiter (Clean slate for Ananya Rao)
   const [passedCandidates, setPassedCandidates] = useState<string[]>([]);
+  const [recruiterCandidates, setRecruiterCandidates] = useState<Person[]>([]);
 
   // Recruiter & Candidate Synchronized Scheduled Interviews State (Clean slate for Ananya Rao)
   const [savedCandidates, setSavedCandidates] = useState<string[]>([]);
-  const [interviews, setInterviews] = useState<typeof INITIAL_INTERVIEWS>(INITIAL_INTERVIEWS);
+  const [interviews, setInterviews] = useState<typeof INITIAL_INTERVIEWS>([]);
 
   const [inviteCandidate, setInviteCandidate] = useState<string>('');
   const [inviteForm, setInviteForm] = useState({
@@ -802,11 +735,25 @@ export default function App() {
   });
 
   const resetDemoState = async () => {
-    // 1. Backend database purge across all models
+    if (auth?.role !== 'Recruiter' || !auth.token) {
+      notify('Only a signed-in recruiter can reset candidate data.');
+      return;
+    }
+    const confirmed = window.confirm(
+      'Reset all candidate assessment answers and scores, findings and reports, reviewer decisions, secure assessment sessions and events, recruiter approvals, and interview records? This cannot be undone. Login accounts will remain so candidates and staff can sign in again.'
+    );
+    if (!confirmed) return;
+
     try {
-      await fetch(`${API_BASE}/api/demo/reset`, { method: 'POST' });
+      const response = await fetch(`${API_BASE}/api/demo/reset`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${auth.token}` },
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.error || 'Reset failed.');
     } catch (err) {
-      console.warn('Backend reset call failed:', err);
+      notify(err instanceof Error ? err.message : 'Reset failed. Candidate data was not cleared.');
+      return;
     }
 
     // 2. Clear all localStorage persistence (timers, assessment progress, responses)
@@ -871,7 +818,7 @@ export default function App() {
     setIsUploadingReport(false);
 
     // 4. Complete REVIEWER State Reset (Clean baseline queue, zero candidate audits)
-    setReviewerDocuments(INITIAL_REVIEWER_DOCUMENTS);
+    setReviewerDocuments([]);
     setReviewingDoc(null);
     setDocReviewScore(88);
     setDocReviewDecision('verified');
@@ -886,6 +833,8 @@ export default function App() {
       'Report quality': 9,
     });
     setExtraTelemetryLogs([]);
+    setFlaggedFindings([]);
+    setActiveReviewerLabs([]);
     setInspectTab('traffic');
     setInspectFilter('ALL');
     setSelectedReqIndex(0);
@@ -906,6 +855,7 @@ export default function App() {
     setSavedCandidates([]);
     setQuery('');
     setPassedCandidates([]);
+    setRecruiterCandidates([]);
     setInviteCandidate('');
     setMinCapability(80);
     setMinConfidence(80);
@@ -923,7 +873,8 @@ export default function App() {
       message: 'We reviewed your verified lab findings and would love to hear how you approached validation and remediation.',
     });
 
-    notify('Complete Reset: Candidate, Reviewer, and Recruiter data freshly started!');
+    notify('All candidate results and workflow records have been reset.');
+    window.location.reload();
   };
 
   // Full 40-Question Assessment & 20-Min Timer State (Persistent across modal close/reopen)
@@ -1098,6 +1049,117 @@ export default function App() {
     setTimeout(() => setToast(''), 2600);
   };
 
+  const updateCandidateApproval = async (name: string, approved: boolean) => {
+    if (!auth || auth.role !== 'Reviewer') {
+      notify('Reviewer sign-in is required to change candidate approval.');
+      return;
+    }
+    const account = CANDIDATE_ACCOUNTS.find((candidate) => candidate.name === name || candidate.email === name);
+    if (!account) {
+      notify('This demo profile has no candidate account. Only real candidate accounts can be passed.');
+      return;
+    }
+    try {
+      const response = await fetch(`${API_BASE}/api/reviewer/candidate-approvals`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${auth.token}` },
+        body: JSON.stringify({ email: account.email, approved }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || 'Could not update reviewer approval.');
+      setPassedCandidates((current) => approved
+        ? Array.from(new Set([...current, account.name]))
+        : current.filter((candidate) => candidate !== account.name));
+      notify(approved ? `${account.name} passed to the recruiter roster.` : `${account.name} removed from the recruiter roster.`);
+    } catch (error) {
+      notify(error instanceof Error ? error.message : 'Could not update reviewer approval.');
+    }
+  };
+
+  useEffect(() => {
+    if (!auth?.token) {
+      setPassedCandidates([]);
+      setRecruiterCandidates([]);
+      return;
+    }
+    let active = true;
+    const headers = { Authorization: `Bearer ${auth.token}` };
+    if (auth.role === 'Reviewer') {
+      fetch(`${API_BASE}/api/reviewer/candidate-approvals`, { headers })
+        .then(async (response) => {
+          if (!response.ok) throw new Error('Could not load reviewer approvals.');
+          return response.json();
+        })
+        .then((data) => { if (active) setPassedCandidates((data.candidates ?? []).filter((item: { approved: boolean }) => item.approved).map((item: { name: string }) => item.name)); })
+        .catch(() => { if (active) setPassedCandidates([]); });
+    } else {
+      setPassedCandidates([]);
+    }
+    if (auth.role === 'Recruiter') {
+      fetch(`${API_BASE}/api/recruiter/candidates`, { headers })
+        .then(async (response) => {
+          if (!response.ok) throw new Error('Could not load passed candidates.');
+          return response.json();
+        })
+        .then((data) => {
+          if (!active) return;
+          const mapped: Person[] = (data.candidates ?? []).map((candidate: {
+            name: string; role: string; security_capability: number; proof_confidence: number;
+            verified_findings: number; security_dna: { skill: string; capability: number }[];
+            verified_tools: string[]; finding_accuracy: number; verified_labs: string[];
+            technical_defense_score: number; report_quality: number;
+          }) => {
+            const dna = Object.fromEntries(SECURITY_DOMAINS.map((domain) => [domain,
+              candidate.security_dna.find((item) => item.skill === domain)?.capability ?? 0]));
+            return {
+              name: candidate.name, role: candidate.role, score: candidate.security_capability,
+              confidence: candidate.proof_confidence, findings: candidate.verified_findings,
+              skills: candidate.security_dna.map((item) => item.skill), tools: candidate.verified_tools ?? [],
+              initials: candidate.name.split(/\s+/).map((part) => part[0]).join('').slice(0, 2).toUpperCase(),
+              tone: 'blue', accuracy: candidate.finding_accuracy, labsVerified: candidate.verified_labs.length,
+              defense: candidate.technical_defense_score, report: candidate.report_quality, dna,
+            };
+          });
+          setRecruiterCandidates(mapped);
+        })
+        .catch(() => { if (active) setRecruiterCandidates([]); });
+    } else {
+      setRecruiterCandidates([]);
+    }
+    return () => { active = false; };
+  }, [auth?.email, auth?.token, auth?.role]);
+
+  useEffect(() => {
+    if (!auth || (auth.role !== 'Reviewer' && auth.role !== 'Candidate')) return;
+    let active = true;
+    fetch(`${API_BASE}/api/documents`, { headers: { Authorization: `Bearer ${auth.token}` } })
+      .then(async (response) => {
+        if (!response.ok) throw new Error('Could not load candidate reports.');
+        return response.json();
+      })
+      .then((data) => {
+        if (!active) return;
+        const documents: CandidateDocItem[] = (data.documents ?? []).map((doc: {
+          id: number; candidate_name: string; candidate_email: string; title: string; lab: string;
+          severity: CandidateDocItem['severity']; doc_type?: CandidateDocItem['fileType']; file_name?: string;
+          file_size?: string; description?: string; status: CandidateDocItem['status']; reviewer_score?: number;
+          reviewer_feedback?: string; reviewed_by?: string; created_at?: string;
+        }) => ({
+          id: String(doc.id), candidateName: doc.candidate_name || 'Candidate', candidateEmail: doc.candidate_email || '',
+          title: doc.title, lab: doc.lab || 'Security Assessment', severity: doc.severity || 'Informational',
+          category: 'Candidate Report', component: 'Submitted assessment report', description: doc.description || '',
+          evidence: 'Evidence is available in the submitted report.', reproduction: '', impact: '', recommendation: '',
+          fileName: doc.file_name, fileSize: doc.file_size, fileType: doc.doc_type,
+          status: doc.status, score: doc.reviewer_score, submittedAt: doc.created_at || '',
+          reviewerFeedback: doc.reviewer_feedback, reviewedBy: doc.reviewed_by,
+        }));
+        if (auth.role === 'Reviewer') setReviewerDocuments(documents);
+        else setCandidateReports(documents);
+      })
+      .catch(() => { if (active && auth.role === 'Reviewer') setReviewerDocuments([]); });
+    return () => { active = false; };
+  }, [auth?.email, auth?.token, auth?.role]);
+
   const nav =
     role === 'Candidate'
       ? ['Overview', 'Security Labs', 'Handbook', 'Toolbox', 'Assessments', 'Findings', 'Reports', 'Proof Profile', 'Interviews']
@@ -1164,9 +1226,9 @@ export default function App() {
   };
 
   // Only include Ananya Rao in recruiter's verified talent roster if she has passed
-  const people: Person[] = hasPassed
-    ? [liveAnanyaProfile, ...SEEDED_PEOPLE]
-    : SEEDED_PEOPLE;
+  const people: Person[] = role === 'Recruiter'
+    ? recruiterCandidates
+    : hasPassed ? [liveAnanyaProfile, ...SEEDED_PEOPLE] : SEEDED_PEOPLE;
 
   const activeCandidate = auth?.name === 'Ananya Rao'
     ? liveAnanyaProfile
@@ -1175,6 +1237,7 @@ export default function App() {
   const matchedPeople = people
     .filter(p => `${p.name} ${p.role} ${p.skills.join(' ')} ${p.tools.join(' ')}`.toLowerCase().includes(query.toLowerCase()) && p.score >= minCapability && p.confidence >= minConfidence && p.accuracy >= minAccuracy && p.dna[requiredSkill] >= minSkill)
     .sort((a, b) => sortBy === 'score' ? b.score - a.score : b.confidence - a.confidence);
+  const selectedProfile = people.find((person) => person.name === lab) ?? people[0] ?? liveAnanyaProfile;
 
   if (!authReady) return (
     <div className="auth-loading" aria-label="Checking sign-in">
@@ -1252,7 +1315,6 @@ export default function App() {
         <header className="topbar">
           <div className="crumb">Workspace <ChevronRight size={13} /><strong>{page}</strong></div>
           <div className="top-actions">
-            <button className="button secondary signout-top" style={{ color: '#9a4c1e', fontWeight: 600 }} title="Reset demo state back to clean starting state from question #1" onClick={() => void resetDemoState()}><RotateCcw size={13} />Reset Demo</button>
             <div className="demo-chip"><span />{' '}DEMO ENVIRONMENT</div>
             <span className="signed-in-role">{role} workspace</span>
             <button className="button secondary signout-top" onClick={() => void signOut()}><LogOut size={14} />Sign out</button>
@@ -2923,13 +2985,7 @@ export default function App() {
                                     borderColor: isPassed ? '#c7dec0' : undefined,
                                   }}
                                   onClick={() => {
-                                    if (isPassed) {
-                                      setPassedCandidates((prev) => prev.filter((c) => c !== p.name));
-                                      notify(`${p.name} unendorsed — removed from recruiter ready list`);
-                                    } else {
-                                      setPassedCandidates((prev) => Array.from(new Set([...prev, p.name])));
-                                      notify(`${p.name} examined, verified, and passed to Recruiter pipeline!`);
-                                    }
+                                    void updateCandidateApproval(p.name, !isPassed);
                                   }}
                                 >
                                   {isPassed ? (
@@ -2995,7 +3051,7 @@ export default function App() {
                       <button
                         className="button primary"
                         onClick={() => {
-                          const target = inviteCandidate || lab || people[0].name;
+                          const target = inviteCandidate || lab || people[0]?.name || '';
                           setLab(target);
                           setInviteCandidate(target);
                           const matched = people.find((p) => p.name === target);
@@ -3486,7 +3542,7 @@ export default function App() {
                       <button
                         className="button primary small-button"
                         onClick={() => {
-                          const target = inviteCandidate || lab || people[0].name;
+                          const target = inviteCandidate || lab || people[0]?.name || '';
                           setLab(target);
                           setInviteCandidate(target);
                           const matched = people.find((p) => p.name === target);
@@ -4160,7 +4216,7 @@ export default function App() {
                         className="button primary"
                         onClick={() => {
                           setVerified(true);
-                          setPassedCandidates((prev) => Array.from(new Set([...prev, 'Ananya Rao'])));
+                          void updateCandidateApproval('Ananya Rao', true);
                           setModal('');
                           notify(`Finding verified (${liveTotalScore}/100) — Ananya Rao examined and passed to Recruiter pipeline!`);
                         }}
@@ -4382,7 +4438,7 @@ export default function App() {
                         className="button primary"
                         onClick={() => {
                           setAssessmentFinalized(true);
-                          setPassedCandidates((prev) => Array.from(new Set([...prev, 'Ananya Rao'])));
+                          void updateCandidateApproval('Ananya Rao', true);
                           setModal('');
                           notify(`Assessment certified (${adjustedScore}/40 · ${percent}%) — Ananya Rao validated and passed to Recruiter pipeline!`);
                         }}
@@ -5075,7 +5131,7 @@ export default function App() {
                   <label>
                     Target Candidate
                     <select
-                      value={inviteCandidate || lab || people[0].name}
+                      value={inviteCandidate || lab || people[0]?.name || ''}
                       onChange={(e) => {
                         const selectedName = e.target.value;
                         setInviteCandidate(selectedName);
@@ -5509,9 +5565,9 @@ export default function App() {
                   <strong>SANITIZED PROOF SUMMARY · {people.find(p => p.name === lab)?.findings ?? 18} VERIFIED FINDINGS</strong>
                   <p>{lab} demonstrated repeatable security testing in authorized labs. Sanitized evidence, reproduction, impact and reviewer remediation notes are available. Raw secrets, credentials and live target details are withheld from recruiter view.</p>
                 </div>
-                <SecurityDna dna={(people.find(p => p.name === lab) ?? people[0]).dna} confidence={(people.find(p => p.name === lab) ?? people[0]).confidence} />
-                <ProofChainGraph defenseScore={(people.find(p => p.name === lab) ?? people[0]).defense} verified={true} />
-                <div className="proof-metrics"><span><b>{(people.find(p => p.name === lab) ?? people[0]).accuracy}%</b> finding accuracy</span><span><b>{(people.find(p => p.name === lab) ?? people[0]).report}</b> report quality</span><span><b>{(people.find(p => p.name === lab) ?? people[0]).labsVerified}</b> verified labs</span><span><b>Human</b> reviewer verification</span></div>
+                <SecurityDna dna={selectedProfile.dna} confidence={selectedProfile.confidence} />
+                <ProofChainGraph defenseScore={selectedProfile.defense} verified={true} />
+                <div className="proof-metrics"><span><b>{selectedProfile.accuracy}%</b> finding accuracy</span><span><b>{selectedProfile.report}</b> report quality</span><span><b>{selectedProfile.labsVerified}</b> verified labs</span><span><b>Human</b> reviewer verification</span></div>
                 {modal === 'profile' && (
                   <div className="modal-actions">
                     {role === 'Reviewer' ? (
@@ -5530,13 +5586,7 @@ export default function App() {
                             borderColor: passedCandidates.includes(lab) ? '#c7dec0' : undefined,
                           }}
                           onClick={() => {
-                            if (passedCandidates.includes(lab)) {
-                              setPassedCandidates((prev) => prev.filter((c) => c !== lab));
-                              notify(`${lab} unendorsed — removed from Recruiter ready queue`);
-                            } else {
-                              setPassedCandidates((prev) => Array.from(new Set([...prev, lab])));
-                              notify(`${lab} examined, validated, and passed to Recruiter pipeline!`);
-                            }
+                            void updateCandidateApproval(lab, !passedCandidates.includes(lab));
                           }}
                         >
                           {passedCandidates.includes(lab) ? (
