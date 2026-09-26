@@ -2008,18 +2008,28 @@ def review_document(doc_id: int):
 
 @app.post("/api/demo/reset")
 def reset_demo_candidate():
-    """Reset the primary demo candidate (Ananya Rao) data to a 100% clean initial state."""
+    """Reset all roles (Candidate, Reviewer, Recruiter) to a completely clean and fresh initial demo baseline."""
     ananya = User.query.filter_by(email="ananya.demo@example.invalid").first()
     if ananya:
         AssessmentResult.query.filter_by(candidate_id=ananya.id).delete()
         Submission.query.filter_by(candidate_id=ananya.id).delete()
         CandidateDocument.query.filter_by(candidate_id=ananya.id).delete()
+        Invitation.query.filter(Invitation.candidate_id == ananya.id).delete()
         old_sessions = [s.id for s in SecureAssessment.query.filter_by(candidate_id=ananya.id).all()]
         if old_sessions:
             SecureAssessmentEvent.query.filter(SecureAssessmentEvent.assessment_id.in_(old_sessions)).delete(synchronize_session=False)
             SecureAssessment.query.filter(SecureAssessment.id.in_(old_sessions)).delete(synchronize_session=False)
-        db.session.commit()
-    return jsonify(message="Primary demo candidate Ananya Rao reset to clean slate (0 assessments, 0 submissions, 0 documents).", status="clean")
+
+    # Clean any orphaned or dynamic test candidate documents uploaded during testing
+    CandidateDocument.query.filter(CandidateDocument.candidate_id.is_(None)).delete()
+    # Reset any dynamic recruiter invitations beyond the seeded baseline
+    Invitation.query.filter(Invitation.message.ilike("%We reviewed your verified%")).delete()
+
+    db.session.commit()
+    return jsonify(
+        message="Full platform demo reset complete: Candidate, Reviewer, and Recruiter data freshly reset.",
+        status="clean"
+    )
 
 
 # ---------------------------------------------------------------------------

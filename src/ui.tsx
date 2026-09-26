@@ -329,6 +329,71 @@ function downloadDocumentFile(fileName: string, fileData: string) {
   document.body.removeChild(link);
 }
 
+const INITIAL_REVIEWER_DOCUMENTS: CandidateDocItem[] = [
+  {
+    id: 'DOC-101',
+    candidateName: 'Rohan Mehta',
+    candidateEmail: 'rohan.demo@example.invalid',
+    title: 'API Authorization & BOLA Security Assessment',
+    lab: 'API Authorization Lab',
+    severity: 'High',
+    category: 'Web Security',
+    component: 'GET /api/v1/orders/{order_id}',
+    description: 'Tested insecure direct object reference vulnerability permitting horizontal authorization bypass.',
+    evidence: 'GET /api/v1/orders/8841 HTTP/1.1 -> 200 OK (sanitized token)',
+    reproduction: '1. Injected alternate ID parameter. 2. Received unauthorized order payload.',
+    impact: 'Exposure of customer PII and purchasing records.',
+    recommendation: 'Bind account claim to database query filter on server.',
+    fileName: 'Rohan_Mehta_API_Authorization_Report.pdf',
+    fileSize: '342 KB',
+    fileType: 'pdf',
+    fileData: SAMPLE_PDF_BASE64,
+    status: 'verified',
+    score: 88,
+    submittedAt: '3 hours ago',
+    reviewerFeedback: 'Accurate classification, well-sanitized request headers, and reproducible curl commands.',
+    reviewedBy: 'Samira Khan',
+  },
+  {
+    id: 'DOC-102',
+    candidateName: 'Karan Shah',
+    candidateEmail: 'karan.demo@example.invalid',
+    title: 'Cross-Site Scripting (XSS) in Search Endpoint',
+    lab: 'Reflected XSS Lab',
+    severity: 'Medium',
+    category: 'Client-Side Security',
+    component: 'GET /search?q=',
+    description: 'Context-breaking script tag reflected in HTML response without output encoding.',
+    evidence: 'GET /search?q=%3Cscript%3E...%3C%2Fscript%3E',
+    reproduction: '1. Injected script tag into search query parameter.',
+    impact: 'Session token exfiltration and DOM manipulation on vulnerable client.',
+    recommendation: 'Context-aware contextual HTML entity encoding and strict CSP header.',
+    fileName: 'Karan_Shah_XSS_Audit_Report.docx',
+    fileSize: '215 KB',
+    fileType: 'docx',
+    fileData: SAMPLE_PDF_BASE64,
+    status: 'pending',
+    submittedAt: '5 hours ago',
+  },
+];
+
+const INITIAL_INTERVIEWS = [
+  {
+    id: 'INT-202',
+    candidate: 'Karan Shah',
+    company: 'CloudGuard Operations / Jordan Davis',
+    role: 'Security Operations & Recon Engineer',
+    type: 'On-Site Whiteboard & Architecture Round (Office)',
+    mode: 'offline' as const,
+    venue: 'FREQUENCY HQ, Tower B, Level 4, Tech Park, Indiranagar, Bengaluru · Conference Room 4B',
+    date: 'Oct 04, 2026',
+    time: '11:30 IST',
+    message: 'Strong performance on network reconnaissance and Nmap scans. Let’s discuss SOC workflows and hands-on defense in our lab.',
+    zoomUrl: '',
+    status: 'PENDING' as const,
+  },
+];
+
 // ---------------------------------------------------------------------------
 // Main App Component
 // ---------------------------------------------------------------------------
@@ -369,53 +434,7 @@ export default function App() {
   });
 
   // Reviewer Candidate Documents Queue (pre-seeded with non-Ananya candidates so reviewer has context, but 0 for Ananya)
-  const [reviewerDocuments, setReviewerDocuments] = useState<CandidateDocItem[]>([
-    {
-      id: 'DOC-101',
-      candidateName: 'Rohan Mehta',
-      candidateEmail: 'rohan.demo@example.invalid',
-      title: 'API Authorization & BOLA Security Assessment',
-      lab: 'API Authorization Lab',
-      severity: 'High',
-      category: 'Web Security',
-      component: 'GET /api/v1/orders/{order_id}',
-      description: 'Tested insecure direct object reference vulnerability permitting horizontal authorization bypass.',
-      evidence: 'GET /api/v1/orders/8841 HTTP/1.1 -> 200 OK (sanitized token)',
-      reproduction: '1. Injected alternate ID parameter. 2. Received unauthorized order payload.',
-      impact: 'Exposure of customer PII and purchasing records.',
-      recommendation: 'Bind account claim to database query filter on server.',
-      fileName: 'Rohan_Mehta_API_Authorization_Report.pdf',
-      fileSize: '342 KB',
-      fileType: 'pdf',
-      fileData: SAMPLE_PDF_BASE64,
-      status: 'verified',
-      score: 88,
-      submittedAt: '3 hours ago',
-      reviewerFeedback: 'Accurate classification, well-sanitized request headers, and reproducible curl commands.',
-      reviewedBy: 'Samira Khan',
-    },
-    {
-      id: 'DOC-102',
-      candidateName: 'Karan Shah',
-      candidateEmail: 'karan.demo@example.invalid',
-      title: 'Cross-Site Scripting (XSS) in Search Endpoint',
-      lab: 'Reflected XSS Lab',
-      severity: 'Medium',
-      category: 'Client-Side Security',
-      component: 'GET /search?q=',
-      description: 'Context-breaking script tag reflected in HTML response without output encoding.',
-      evidence: 'GET /search?q=%3Cscript%3E...%3C%2Fscript%3E',
-      reproduction: '1. Injected script tag into search query parameter.',
-      impact: 'Session token exfiltration and DOM manipulation on vulnerable client.',
-      recommendation: 'Context-aware contextual HTML entity encoding and strict CSP header.',
-      fileName: 'Karan_Shah_XSS_Audit_Report.docx',
-      fileSize: '215 KB',
-      fileType: 'docx',
-      fileData: SAMPLE_PDF_BASE64,
-      status: 'pending',
-      submittedAt: '5 hours ago',
-    },
-  ]);
+  const [reviewerDocuments, setReviewerDocuments] = useState<CandidateDocItem[]>(INITIAL_REVIEWER_DOCUMENTS);
 
   // Reviewer Document Review Modal State
   const [reviewingDoc, setReviewingDoc] = useState<CandidateDocItem | null>(null);
@@ -786,22 +805,7 @@ export default function App() {
       zoomUrl?: string;
       status: 'CONFIRMED' | 'PENDING' | 'DECLINED';
     }[]
-  >([
-    {
-      id: 'INT-202',
-      candidate: 'Karan Shah',
-      company: 'CloudGuard Operations / Jordan Davis',
-      role: 'Security Operations & Recon Engineer',
-      type: 'On-Site Whiteboard & Architecture Round (Office)',
-      mode: 'offline',
-      venue: 'FREQUENCY HQ, Tower B, Level 4, Tech Park, Indiranagar, Bengaluru · Conference Room 4B',
-      date: 'Oct 04, 2026',
-      time: '11:30 IST',
-      message: 'Strong performance on network reconnaissance and Nmap scans. Let’s discuss SOC workflows and hands-on defense in our lab.',
-      zoomUrl: '',
-      status: 'PENDING',
-    },
-  ]);
+  >(INITIAL_INTERVIEWS);
 
   const [inviteCandidate, setInviteCandidate] = useState<string>('Ananya Rao');
   const [inviteForm, setInviteForm] = useState({
@@ -816,14 +820,33 @@ export default function App() {
   });
 
   const resetDemoState = async () => {
+    // 1. Backend database purge across all models
     try {
       await fetch(`${API_BASE}/api/demo/reset`, { method: 'POST' });
-    } catch {}
+    } catch (err) {
+      console.warn('Backend reset call failed:', err);
+    }
+
+    // 2. Clear all localStorage persistence (timers, assessment progress, responses)
     try {
-      Object.keys(localStorage).forEach(key => {
-        if (key.startsWith('proofforge.')) localStorage.removeItem(key);
+      Object.keys(localStorage).forEach((key) => {
+        if (
+          key.startsWith('proofforge.') ||
+          key.includes('assessment') ||
+          key.includes('answers') ||
+          key.includes('timeLeft') ||
+          key.includes('startedAt') ||
+          key.includes('submitted') ||
+          key.includes('qIndex')
+        ) {
+          localStorage.removeItem(key);
+        }
       });
-    } catch {}
+    } catch (err) {
+      console.warn('LocalStorage clear error:', err);
+    }
+
+    // 3. Complete CANDIDATE State Reset (Fresh start from Question #1 with 0 findings/reports)
     setAssessmentSubmitted(false);
     setSelectedAnswers({});
     setCurrentQIndex(0);
@@ -832,26 +855,13 @@ export default function App() {
     setCandidateProgress(null);
     setServerAssessmentResults([]);
     setAssessmentFinalized(false);
-    setPassedCandidates(['Karan Shah']);
-    setInterviews([
-      {
-        id: 'INT-202',
-        candidate: 'Karan Shah',
-        company: 'CloudGuard Operations / Jordan Davis',
-        role: 'Security Operations & Recon Engineer',
-        type: 'On-Site Whiteboard & Architecture Round (Office)',
-        mode: 'offline',
-        venue: 'FREQUENCY HQ, Tower B, Level 4, Tech Park, Indiranagar, Bengaluru · Conference Room 4B',
-        date: 'Oct 04, 2026',
-        time: '11:30 IST',
-        message: 'Strong performance on network reconnaissance and Nmap scans. Let’s discuss SOC workflows and hands-on defense in our lab.',
-        zoomUrl: '',
-        status: 'PENDING',
-      },
-    ]);
     setCandidateReports([]);
     setVerified(false);
-    setReviewerDocuments((prev) => prev.filter((d) => d.candidateName !== 'Ananya Rao' && d.candidateEmail !== 'ananya.demo@example.invalid'));
+    setDefenseAsked(false);
+    setDefenseAnswers(['', '', '', '', '']);
+    setDefenseSent(false);
+    setDefenseEvaluated(false);
+    setDefenseScore(89);
     setFindingForm({
       title: 'Broken Access Control (BOLA)',
       severity: 'High',
@@ -875,7 +885,63 @@ export default function App() {
       fileType: 'pdf',
       fileData: '',
     });
-    notify('Demo reset: Candidate started fresh with clean slate!');
+    setReportDragOver(false);
+    setIsUploadingReport(false);
+
+    // 4. Complete REVIEWER State Reset (Clean baseline queue, zero candidate audits)
+    setReviewerDocuments(INITIAL_REVIEWER_DOCUMENTS);
+    setReviewingDoc(null);
+    setDocReviewScore(88);
+    setDocReviewDecision('verified');
+    setDocReviewFeedback('Comprehensive methodology, clear reproduction steps, and sound remediation guidance.');
+    setRubricScores({
+      'Reconnaissance': 9,
+      'Vulnerability finding': 23,
+      'Validation': 18,
+      'Evidence': 14,
+      'Impact analysis': 9,
+      'Remediation': 9,
+      'Report quality': 9,
+    });
+    setExtraTelemetryLogs([]);
+    setInspectTab('traffic');
+    setInspectFilter('ALL');
+    setSelectedReqIndex(0);
+    setQbQuestions(ALL_ASSESSMENT_QUESTIONS);
+    setQbSectionFilter('All');
+    setQbSearch('');
+    setEditingQuestion(null);
+    setQbForm({
+      section: 'Aptitude',
+      question: '',
+      options: ['', '', '', ''],
+      correctIndex: 0,
+      explanation: '',
+    });
+
+    // 5. Complete RECRUITER State Reset (Clean interviews baseline, cleared search & shortlists)
+    setInterviews(INITIAL_INTERVIEWS);
+    setSavedCandidates([]);
+    setQuery('');
+    setPassedCandidates(['Karan Shah']);
+    setInviteCandidate('');
+    setMinCapability(80);
+    setMinConfidence(80);
+    setMinAccuracy(85);
+    setRequiredSkill('Web Security');
+    setMinSkill(80);
+    setInviteForm({
+      role: 'Application Security Engineer',
+      mode: 'online',
+      type: 'Technical Defense Deep Dive (Zoom)',
+      venue: 'FREQUENCY HQ, Tower B, Level 4, Tech Park, Indiranagar, Bengaluru - 560038',
+      room: 'Security War Room 4B · Hardware Token & Lab Station',
+      date: '2026-10-02',
+      time: '14:00 IST',
+      message: 'We reviewed your verified lab findings and would love to hear how you approached validation and remediation.',
+    });
+
+    notify('Complete Reset: Candidate, Reviewer, and Recruiter data freshly started!');
   };
 
   // Full 40-Question Assessment & 20-Min Timer State (Persistent across modal close/reopen)
@@ -2887,16 +2953,11 @@ export default function App() {
                   <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                     <button
                       className="button secondary"
-                      style={{ padding: '6px 11px', fontSize: 11, display: 'inline-flex', alignItems: 'center', gap: 5 }}
-                      onClick={() => {
-                        setInterviews([]);
-                        setSavedCandidates([]);
-                        setQuery('');
-                        notify('All recruiter entries, invites & shortlisted candidates cleared');
-                      }}
-                      title="Clear all recruiter entries and reset shortlist"
+                      style={{ padding: '6px 11px', fontSize: 11, display: 'inline-flex', alignItems: 'center', gap: 5, color: '#9a4c1e', fontWeight: 600 }}
+                      onClick={() => void resetDemoState()}
+                      title="Completely reset all candidate, reviewer, and recruiter demo data to fresh initial state"
                     >
-                      <Trash2 size={12} /> Clear / Reset Entries
+                      <RotateCcw size={12} /> Reset All Entries (Fresh Start)
                     </button>
                     {page === 'Interviews' ? (
                       <button
@@ -3378,41 +3439,11 @@ export default function App() {
                       )}
                       <button
                         className="button secondary small-button"
-                        onClick={() => {
-                          setInterviews([
-                            {
-                              id: 'INT-201',
-                              candidate: 'Ananya Rao',
-                              company: 'ProofForge Cyber / Jordan Davis',
-                              role: 'Application Security Engineer',
-                              type: 'Technical Defense Deep Dive (Zoom)',
-                              mode: 'online',
-                              date: 'Oct 02, 2026',
-                              time: '14:00 IST',
-                              message: 'We reviewed your verified API authorization findings and would love to talk about your validation and remediation approach.',
-                              zoomUrl: 'https://us05web.zoom.us/myhome',
-                              status: 'CONFIRMED',
-                            },
-                            {
-                              id: 'INT-202',
-                              candidate: 'Karan Shah',
-                              company: 'CloudGuard Operations / Jordan Davis',
-                              role: 'Security Operations & Recon Engineer',
-                              type: 'On-Site Whiteboard & Architecture Round (Office)',
-                              mode: 'offline',
-                              venue: 'ProofForge Cyber HQ, Tower B, Level 4, Tech Park, Indiranagar, Bengaluru · Conference Room 4B',
-                              date: 'Oct 04, 2026',
-                              time: '11:30 IST',
-                              message: 'Strong performance on network reconnaissance and Nmap scans. Let’s discuss SOC workflows and hands-on defense in our lab.',
-                              zoomUrl: '',
-                              status: 'PENDING',
-                            },
-                          ]);
-                          notify('Demo interview entries restored');
-                        }}
-                        title="Reset interview entries to demo defaults"
+                        style={{ color: '#9a4c1e', fontWeight: 600 }}
+                        onClick={() => void resetDemoState()}
+                        title="Completely reset all candidate, reviewer, and recruiter demo data to fresh initial state"
                       >
-                        <RotateCcw size={12} /> Reset Defaults
+                        <RotateCcw size={12} /> Reset Defaults &amp; All Roles
                       </button>
                       <button
                         className="button primary small-button"
