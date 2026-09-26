@@ -38,7 +38,6 @@ services:
   - type: web
     name: proofforge-cyber
     runtime: static
-    plan: free
     buildCommand: npm ci && npm run build
     staticPublishPath: dist
     envVars:
