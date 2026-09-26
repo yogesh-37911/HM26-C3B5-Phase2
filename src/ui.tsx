@@ -236,13 +236,12 @@ interface Person {
 }
 
 const SECURITY_DOMAINS = ['Web Security', 'API Security', 'Network Security', 'Reconnaissance', 'Linux Security', 'Vulnerability Assessment', 'Penetration Testing', 'Security Reporting', 'Incident Response / Blue Team'];
-const people: Person[] = [
-  { name: 'Ananya Rao', role: 'Application Security Engineer', score: 94, confidence: 97, findings: 18, skills: ['Web Security', 'API Security'], tools: ['Burp Suite', 'Nmap'], initials: 'AR', tone: 'peach', accuracy: 90, labsVerified: 6, defense: 91, report: 93, dna: { 'Web Security': 94, 'API Security': 91, 'Network Security': 74, Reconnaissance: 89, 'Linux Security': 68, 'Vulnerability Assessment': 92, 'Penetration Testing': 89, 'Security Reporting': 93, 'Incident Response / Blue Team': 65 } },
+const SEEDED_PEOPLE: Person[] = [
   { name: 'Rohan Mehta', role: 'Penetration Tester', score: 89, confidence: 91, findings: 14, skills: ['Network Security', 'Linux Security'], tools: ['Nmap', 'Wireshark'], initials: 'RM', tone: 'blue', accuracy: 86, labsVerified: 5, defense: 87, report: 84, dna: { 'Web Security': 75, 'API Security': 71, 'Network Security': 93, Reconnaissance: 92, 'Linux Security': 88, 'Vulnerability Assessment': 86, 'Penetration Testing': 91, 'Security Reporting': 84, 'Incident Response / Blue Team': 77 } },
-  { name: 'Maya Iyer', role: 'Security Analyst & SOC', score: 86, confidence: 94, findings: 12, skills: ['Incident Response / Blue Team', 'Network Security'], tools: ['Wireshark', 'Nmap'], initials: 'MI', tone: 'lilac', accuracy: 92, labsVerified: 4, defense: 89, report: 91, dna: { 'Web Security': 69, 'API Security': 66, 'Network Security': 87, Reconnaissance: 78, 'Linux Security': 75, 'Vulnerability Assessment': 83, 'Penetration Testing': 72, 'Security Reporting': 91, 'Incident Response / Blue Team': 95 } },
-  { name: 'Karan Shah', role: 'SecOps & Threat Hunter', score: 88, confidence: 92, findings: 15, skills: ['Reconnaissance', 'Network Security'], tools: ['Nmap', 'Sublist3r', 'Metasploit'], initials: 'KS', tone: 'mint', accuracy: 88, labsVerified: 5, defense: 86, report: 89, dna: { 'Web Security': 78, 'API Security': 80, 'Network Security': 91, Reconnaissance: 95, 'Linux Security': 84, 'Vulnerability Assessment': 88, 'Penetration Testing': 87, 'Security Reporting': 86, 'Incident Response / Blue Team': 83 } },
   { name: 'Devon Miles', role: 'Cloud & API Security Auditor', score: 92, confidence: 95, findings: 16, skills: ['API Security', 'Vulnerability Assessment'], tools: ['Postman', 'Burp Suite', 'FFUF'], initials: 'DM', tone: 'cream', accuracy: 91, labsVerified: 6, defense: 93, report: 95, dna: { 'Web Security': 89, 'API Security': 96, 'Network Security': 76, Reconnaissance: 84, 'Linux Security': 82, 'Vulnerability Assessment': 94, 'Penetration Testing': 85, 'Security Reporting': 95, 'Incident Response / Blue Team': 79 } },
   { name: 'Priya Sharma', role: 'Vulnerability Researcher', score: 91, confidence: 93, findings: 17, skills: ['Web Security', 'Penetration Testing'], tools: ['Burp Suite', 'SQLMap', 'Nuclei'], initials: 'PS', tone: 'lavender', accuracy: 89, labsVerified: 6, defense: 90, report: 92, dna: { 'Web Security': 95, 'API Security': 88, 'Network Security': 79, Reconnaissance: 91, 'Linux Security': 85, 'Vulnerability Assessment': 93, 'Penetration Testing': 94, 'Security Reporting': 90, 'Incident Response / Blue Team': 74 } },
+  { name: 'Maya Iyer', role: 'Security Analyst & SOC', score: 86, confidence: 94, findings: 12, skills: ['Incident Response / Blue Team', 'Network Security'], tools: ['Wireshark', 'Nmap'], initials: 'MI', tone: 'lilac', accuracy: 92, labsVerified: 4, defense: 89, report: 91, dna: { 'Web Security': 69, 'API Security': 66, 'Network Security': 87, Reconnaissance: 78, 'Linux Security': 75, 'Vulnerability Assessment': 83, 'Penetration Testing': 72, 'Security Reporting': 91, 'Incident Response / Blue Team': 95 } },
+  { name: 'Karan Shah', role: 'SecOps & Threat Hunter', score: 88, confidence: 92, findings: 15, skills: ['Reconnaissance', 'Network Security'], tools: ['Nmap', 'Sublist3r', 'Metasploit'], initials: 'KS', tone: 'mint', accuracy: 88, labsVerified: 5, defense: 86, report: 89, dna: { 'Web Security': 78, 'API Security': 80, 'Network Security': 91, Reconnaissance: 95, 'Linux Security': 84, 'Vulnerability Assessment': 88, 'Penetration Testing': 87, 'Security Reporting': 86, 'Incident Response / Blue Team': 83 } },
   { name: 'Vikram Malhotra', role: 'DevSecOps & Linux Hardening', score: 87, confidence: 90, findings: 13, skills: ['Linux Security', 'Vulnerability Assessment'], tools: ['Docker', 'Nmap', 'Lynis'], initials: 'VM', tone: 'blue', accuracy: 87, labsVerified: 4, defense: 85, report: 88, dna: { 'Web Security': 72, 'API Security': 75, 'Network Security': 84, Reconnaissance: 80, 'Linux Security': 96, 'Vulnerability Assessment': 89, 'Penetration Testing': 80, 'Security Reporting': 87, 'Incident Response / Blue Team': 86 } },
 ];
 
@@ -377,22 +376,20 @@ const INITIAL_REVIEWER_DOCUMENTS: CandidateDocItem[] = [
   },
 ];
 
-const INITIAL_INTERVIEWS = [
-  {
-    id: 'INT-202',
-    candidate: 'Karan Shah',
-    company: 'CloudGuard Operations / Jordan Davis',
-    role: 'Security Operations & Recon Engineer',
-    type: 'On-Site Whiteboard & Architecture Round (Office)',
-    mode: 'offline' as const,
-    venue: 'FREQUENCY HQ, Tower B, Level 4, Tech Park, Indiranagar, Bengaluru · Conference Room 4B',
-    date: 'Oct 04, 2026',
-    time: '11:30 IST',
-    message: 'Strong performance on network reconnaissance and Nmap scans. Let’s discuss SOC workflows and hands-on defense in our lab.',
-    zoomUrl: '',
-    status: 'PENDING' as const,
-  },
-];
+const INITIAL_INTERVIEWS: {
+  id: string;
+  candidate: string;
+  company: string;
+  role: string;
+  type: string;
+  mode: 'online' | 'offline';
+  venue?: string;
+  date: string;
+  time: string;
+  message: string;
+  zoomUrl?: string;
+  status: 'CONFIRMED' | 'PENDING' | 'DECLINED';
+}[] = [];
 
 // ---------------------------------------------------------------------------
 // Main App Component
@@ -786,28 +783,13 @@ export default function App() {
   ]);
 
   // Reviewer Candidate Validation & Endorsement to Recruiter (Clean slate for Ananya Rao)
-  const [passedCandidates, setPassedCandidates] = useState<string[]>(['Karan Shah']);
+  const [passedCandidates, setPassedCandidates] = useState<string[]>([]);
 
   // Recruiter & Candidate Synchronized Scheduled Interviews State (Clean slate for Ananya Rao)
-  const [savedCandidates, setSavedCandidates] = useState<string[]>(['Karan Shah']);
-  const [interviews, setInterviews] = useState<
-    {
-      id: string;
-      candidate: string;
-      company: string;
-      role: string;
-      type: string;
-      mode: 'online' | 'offline';
-      venue?: string;
-      date: string;
-      time: string;
-      message: string;
-      zoomUrl?: string;
-      status: 'CONFIRMED' | 'PENDING' | 'DECLINED';
-    }[]
-  >(INITIAL_INTERVIEWS);
+  const [savedCandidates, setSavedCandidates] = useState<string[]>([]);
+  const [interviews, setInterviews] = useState<typeof INITIAL_INTERVIEWS>(INITIAL_INTERVIEWS);
 
-  const [inviteCandidate, setInviteCandidate] = useState<string>('Ananya Rao');
+  const [inviteCandidate, setInviteCandidate] = useState<string>('');
   const [inviteForm, setInviteForm] = useState({
     role: 'Application Security Engineer',
     mode: 'online' as 'online' | 'offline',
@@ -920,10 +902,10 @@ export default function App() {
     });
 
     // 5. Complete RECRUITER State Reset (Clean interviews baseline, cleared search & shortlists)
-    setInterviews(INITIAL_INTERVIEWS);
+    setInterviews([]);
     setSavedCandidates([]);
     setQuery('');
-    setPassedCandidates(['Karan Shah']);
+    setPassedCandidates([]);
     setInviteCandidate('');
     setMinCapability(80);
     setMinConfidence(80);
@@ -1141,10 +1123,58 @@ export default function App() {
     setPage('Overview');
   };
 
+  // Dynamic Candidate Profile for Ananya Rao (Starts at 0 until assessment/findings are completed)
+  const hasPassed = passedCandidates.includes('Ananya Rao') || assessmentFinalized;
+  const liveVerifiedFindings = candidateReports.filter((r) => r.status === 'verified').length;
+  const liveScore = candidateProgress && candidateProgress.overall_capability > 0
+    ? candidateProgress.overall_capability
+    : (assessmentFinalized ? 91 : (assessmentSubmitted ? 88 : 0));
+  const liveConfidence = candidateProgress && candidateProgress.proof_confidence > 0
+    ? candidateProgress.proof_confidence
+    : (assessmentFinalized ? 94 : (assessmentSubmitted ? 90 : 0));
+  const liveAccuracy = candidateProgress && candidateProgress.finding_accuracy > 0
+    ? candidateProgress.finding_accuracy
+    : (assessmentFinalized ? 88 : (liveVerifiedFindings > 0 ? 85 : 0));
+
+  const liveAnanyaProfile: Person = {
+    name: 'Ananya Rao',
+    role: 'Application Security Engineer',
+    score: liveScore,
+    confidence: liveConfidence,
+    findings: liveVerifiedFindings,
+    skills: ['Web Security', 'API Security'],
+    tools: ['Burp Suite', 'Nmap'],
+    initials: 'AR',
+    tone: 'peach',
+    accuracy: liveAccuracy,
+    labsVerified: liveVerifiedFindings,
+    defense: defenseEvaluated ? defenseScore : (assessmentFinalized ? 91 : 0),
+    report: liveVerifiedFindings > 0 ? 92 : 0,
+    dna: {
+      'Web Security': liveScore > 0 ? Math.min(100, liveScore + 3) : 0,
+      'API Security': liveScore > 0 ? liveScore : 0,
+      'Network Security': liveScore > 0 ? Math.max(0, liveScore - 15) : 0,
+      'Reconnaissance': liveScore > 0 ? Math.max(0, liveScore - 5) : 0,
+      'Linux Security': liveScore > 0 ? Math.max(0, liveScore - 20) : 0,
+      'Vulnerability Assessment': liveScore > 0 ? Math.min(100, liveScore + 2) : 0,
+      'Penetration Testing': liveScore > 0 ? Math.max(0, liveScore - 2) : 0,
+      'Security Reporting': liveVerifiedFindings > 0 ? 93 : 0,
+      'Incident Response / Blue Team': liveScore > 0 ? Math.max(0, liveScore - 25) : 0,
+    },
+  };
+
+  // Only include Ananya Rao in recruiter's verified talent roster if she has passed
+  const people: Person[] = hasPassed
+    ? [liveAnanyaProfile, ...SEEDED_PEOPLE]
+    : SEEDED_PEOPLE;
+
+  const activeCandidate = auth?.name === 'Ananya Rao'
+    ? liveAnanyaProfile
+    : (people.find((person) => person.name === auth?.name) ?? liveAnanyaProfile);
+
   const matchedPeople = people
     .filter(p => `${p.name} ${p.role} ${p.skills.join(' ')} ${p.tools.join(' ')}`.toLowerCase().includes(query.toLowerCase()) && p.score >= minCapability && p.confidence >= minConfidence && p.accuracy >= minAccuracy && p.dna[requiredSkill] >= minSkill)
     .sort((a, b) => sortBy === 'score' ? b.score - a.score : b.confidence - a.confidence);
-  const activeCandidate = people.find(person => person.name === auth?.name) ?? people[0];
 
   if (!authReady) return (
     <div className="auth-loading" aria-label="Checking sign-in">
@@ -2622,7 +2652,9 @@ export default function App() {
                         <p>Historical audit trail of human reviewer verifications and rubric breakdowns.</p>
                       </div>
                     </div>
-                    <ReviewRow name="Ananya Rao" finding="Broken Access Control (Score: 91/100)" lab="API Authorization Lab" time="Verified today" score="91" onClick={() => setModal('review')} />
+                    {candidateReports.filter(r => r.status === 'verified').map(r => (
+                      <ReviewRow key={r.id} name={r.candidateName} finding={`${r.title} (Score: ${r.score || 90}/100)`} lab={r.lab} time="Verified recently" score={String(r.score || 90)} onClick={() => setModal('review')} />
+                    ))}
                     <ReviewRow name="Karan Shah" finding="Reflected Cross-Site Scripting (Score: 74/100)" lab="Reflected XSS Lab" time="Verified yesterday" score="74" onClick={() => setModal('review')} />
                   </div>
                 </div>
@@ -3001,7 +3033,7 @@ export default function App() {
                   <div className="metrics">
                     <Metric label="VERIFIED TALENTS" value={String(people.length)} trend="5 Specializations" icon={<ShieldCheck />} tone="mint" />
                     <Metric label="SAVED SHORTLIST" value={String(savedCandidates.length)} trend="Ready for screen" icon={<Award />} tone="lavender" />
-                    <Metric label="ACTIVE INTERVIEWS" value={String(interviews.length)} trend="2 Scheduled" icon={<Clock3 />} tone="cream" />
+                    <Metric label="ACTIVE INTERVIEWS" value={String(interviews.length)} trend={interviews.length === 1 ? '1 Scheduled' : `${interviews.length} Scheduled`} icon={<Clock3 />} tone="cream" />
                     <Metric label="EVIDENCE MATCH" value="94%" trend="Proof Confidence" icon={<Fingerprint />} tone="peach" />
                   </div>
 
@@ -3093,50 +3125,56 @@ export default function App() {
                       </div>
 
                       <div className="rec-interview-list">
-                        {interviews.map((item) => {
-                          const isOffline = item.mode === 'offline';
-                          return (
-                            <div className="rec-interview-item" key={item.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                              <div className="rec-interview-info">
-                                <div className="rec-interview-date">{item.date}</div>
-                                <div className="rec-interview-meta">
-                                  <strong>{item.candidate}</strong>
-                                  <p>{item.role} · {item.type} ({item.time})</p>
+                        {interviews.length === 0 ? (
+                          <div style={{ textAlign: 'center', padding: '24px 12px', color: '#7a8475', fontSize: 11 }}>
+                            No technical interviews scheduled yet. Shortlist verified candidates and schedule technical defense interviews.
+                          </div>
+                        ) : (
+                          interviews.map((item) => {
+                            const isOffline = item.mode === 'offline';
+                            return (
+                              <div className="rec-interview-item" key={item.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <div className="rec-interview-info">
+                                  <div className="rec-interview-date">{item.date}</div>
+                                  <div className="rec-interview-meta">
+                                    <strong>{item.candidate}</strong>
+                                    <p>{item.role} · {item.type} ({item.time})</p>
+                                  </div>
+                                </div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                  <span className="verified-pill" style={{ fontSize: 9 }}>
+                                    {isOffline ? 'OFFLINE / ON-SITE' : item.status}
+                                  </span>
+                                  {isOffline ? (
+                                    <button
+                                      className="button secondary small-button"
+                                      style={{ padding: '4px 8px', fontSize: 10, display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                                      onClick={() => {
+                                        window.open(`https://maps.google.com/?q=${encodeURIComponent(item.venue || 'Bengaluru Tech Park')}`, '_blank', 'noopener,noreferrer');
+                                        notify(`Opening venue location for ${item.candidate}...`);
+                                      }}
+                                      title="View Venue Map"
+                                    >
+                                      <MapPin size={11} /> Venue Map
+                                    </button>
+                                  ) : (
+                                    <button
+                                      className="button primary small-button"
+                                      style={{ padding: '4px 8px', fontSize: 10, display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                                      onClick={() => {
+                                        window.open(item.zoomUrl || 'https://us05web.zoom.us/myhome', '_blank', 'noopener,noreferrer');
+                                        notify(`Opening Zoom meeting room for ${item.candidate}...`);
+                                      }}
+                                      title="Open Zoom Meeting Room"
+                                    >
+                                      <Video size={11} /> Join Zoom
+                                    </button>
+                                  )}
                                 </div>
                               </div>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                                <span className="verified-pill" style={{ fontSize: 9 }}>
-                                  {isOffline ? 'OFFLINE / ON-SITE' : item.status}
-                                </span>
-                                {isOffline ? (
-                                  <button
-                                    className="button secondary small-button"
-                                    style={{ padding: '4px 8px', fontSize: 10, display: 'inline-flex', alignItems: 'center', gap: 4 }}
-                                    onClick={() => {
-                                      window.open(`https://maps.google.com/?q=${encodeURIComponent(item.venue || 'Bengaluru Tech Park')}`, '_blank', 'noopener,noreferrer');
-                                      notify(`Opening venue location for ${item.candidate}...`);
-                                    }}
-                                    title="View Venue Map"
-                                  >
-                                    <MapPin size={11} /> Venue Map
-                                  </button>
-                                ) : (
-                                  <button
-                                    className="button primary small-button"
-                                    style={{ padding: '4px 8px', fontSize: 10, display: 'inline-flex', alignItems: 'center', gap: 4 }}
-                                    onClick={() => {
-                                      window.open(item.zoomUrl || 'https://us05web.zoom.us/myhome', '_blank', 'noopener,noreferrer');
-                                      notify(`Opening Zoom meeting room for ${item.candidate}...`);
-                                    }}
-                                    title="Open Zoom Meeting Room"
-                                  >
-                                    <Video size={11} /> Join Room
-                                  </button>
-                                )}
-                              </div>
-                            </div>
-                          );
-                        })}
+                            );
+                          })
+                        )}
                       </div>
                     </div>
                   </div>
