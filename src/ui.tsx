@@ -5103,48 +5103,98 @@ export default function App() {
                     />
                   </label>
 
-                  <label>
-                    Meeting Format
-                    <select
-                      value={inviteForm.mode}
-                      onChange={(e) => {
-                        const nextMode = e.target.value as 'online' | 'offline';
-                        setInviteForm({
-                          ...inviteForm,
-                          mode: nextMode,
-                          type: nextMode === 'online'
-                            ? 'Technical Defense Deep Dive (Zoom)'
-                            : 'On-Site Technical Whiteboard & Lab Session (Office)',
-                        });
-                      }}
-                    >
-                      <option value="online">🌐 Online / Virtual Meeting (Zoom)</option>
-                      <option value="offline">🏢 In-Person / Offline Meeting (Office &amp; Lab)</option>
-                    </select>
+                  <label className="span-two">
+                    Interview Mode (Online vs Offline / On-Spot)
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 4 }}>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setInviteForm({
+                            ...inviteForm,
+                            mode: 'online',
+                            type: 'Technical Defense Deep Dive (Zoom)',
+                          });
+                        }}
+                        style={{
+                          padding: '10px 14px',
+                          borderRadius: 8,
+                          border: inviteForm.mode === 'online' ? '2px solid #275823' : '1px solid #d9e2d5',
+                          background: inviteForm.mode === 'online' ? '#eaf4e6' : '#ffffff',
+                          color: inviteForm.mode === 'online' ? '#1b4018' : '#556652',
+                          fontWeight: inviteForm.mode === 'online' ? 700 : 500,
+                          fontSize: 12.5,
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: 8,
+                          transition: 'all 0.15s ease',
+                        }}
+                      >
+                        <Globe2 size={16} style={{ color: inviteForm.mode === 'online' ? '#275823' : '#778873' }} />
+                        <span>🌐 Online / Virtual Meeting (Zoom)</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setInviteForm({
+                            ...inviteForm,
+                            mode: 'offline',
+                            type: 'On-Spot / In-Person Technical Defense (Office)',
+                          });
+                        }}
+                        style={{
+                          padding: '10px 14px',
+                          borderRadius: 8,
+                          border: inviteForm.mode === 'offline' ? '2px solid #275823' : '1px solid #d9e2d5',
+                          background: inviteForm.mode === 'offline' ? '#eaf4e6' : '#ffffff',
+                          color: inviteForm.mode === 'offline' ? '#1b4018' : '#556652',
+                          fontWeight: inviteForm.mode === 'offline' ? 700 : 500,
+                          fontSize: 12.5,
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: 8,
+                          transition: 'all 0.15s ease',
+                        }}
+                      >
+                        <Building2 size={16} style={{ color: inviteForm.mode === 'offline' ? '#275823' : '#778873' }} />
+                        <span>🏢 Offline / On-Spot Meeting (In-Person Office)</span>
+                      </button>
+                    </div>
                   </label>
 
                   <label>
                     Interview Session Type
                     <select
                       value={inviteForm.type}
-                      onChange={(e) => setInviteForm({ ...inviteForm, type: e.target.value })}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        const isOff = val.includes('(Office)') || val.includes('(In-Person)') || val.includes('(On-Site)');
+                        setInviteForm({
+                          ...inviteForm,
+                          type: val,
+                          mode: isOff ? 'offline' : 'online',
+                        });
+                      }}
+                      style={{ fontWeight: 600, color: '#1f331d' }}
                     >
-                      {inviteForm.mode === 'online' ? (
-                        <>
-                          <option value="Technical Defense Deep Dive (Zoom)">Technical Defense Deep Dive (Zoom)</option>
-                          <option value="Virtual Technical Screen (Zoom)">Virtual Technical Screen (Zoom)</option>
-                          <option value="Vulnerability Code Review (Zoom)">Vulnerability Code Review (Zoom)</option>
-                          <option value="Final Architecture Round (Zoom)">Final Architecture Round (Zoom)</option>
-                        </>
-                      ) : (
-                        <>
-                          <option value="On-Site Technical Whiteboard &amp; Architecture (Office)">On-Site Technical Whiteboard &amp; Architecture (Office)</option>
-                          <option value="Hands-on Security Lab &amp; Container Audit (In-Person)">Hands-on Security Lab &amp; Container Audit (In-Person)</option>
-                          <option value="Executive Security Defense &amp; Leadership Round (Office)">Executive Security Defense &amp; Leadership Round (Office)</option>
-                          <option value="Practical Penetration Testing Workshop (On-Site)">Practical Penetration Testing Workshop (On-Site)</option>
-                          <option value="Team Culture &amp; Coffee Meetup (In-Person)">Team Culture &amp; Coffee Meetup (In-Person)</option>
-                        </>
-                      )}
+                      <optgroup label="🌐 Online / Virtual Meeting (Zoom)">
+                        <option value="Technical Defense Deep Dive (Zoom)">Technical Defense Deep Dive (Zoom)</option>
+                        <option value="Virtual Technical Screen (Zoom)">Virtual Technical Screen (Zoom)</option>
+                        <option value="Vulnerability Code Review (Zoom)">Vulnerability Code Review (Zoom)</option>
+                        <option value="Final Architecture Round (Zoom)">Final Architecture Round (Zoom)</option>
+                      </optgroup>
+                      <optgroup label="🏢 Offline / On-Spot Meeting (Office &amp; Lab)">
+                        <option value="On-Spot / In-Person Technical Defense (Office)">On-Spot / In-Person Technical Defense (Office)</option>
+                        <option value="On-Spot Technical Whiteboard &amp; Architecture (Office)">On-Spot Technical Whiteboard &amp; Architecture (Office)</option>
+                        <option value="Hands-on Security Lab &amp; Container Audit (In-Person)">Hands-on Security Lab &amp; Container Audit (In-Person)</option>
+                        <option value="Practical Penetration Testing Workshop (On-Site)">Practical Penetration Testing Workshop (On-Site)</option>
+                        <option value="Executive Security Defense &amp; Leadership Round (Office)">Executive Security Defense &amp; Leadership Round (Office)</option>
+                        <option value="Team Culture &amp; Coffee Meetup (In-Person)">Team Culture &amp; Coffee Meetup (In-Person)</option>
+                      </optgroup>
                     </select>
                   </label>
 
