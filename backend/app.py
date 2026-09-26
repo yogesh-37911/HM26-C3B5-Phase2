@@ -1742,6 +1742,7 @@ def socket_join_reviewer():
     if not user or user.role != "reviewer": return {"error": "Forbidden"}
     join_room(f"reviewer:{user.id}")
     join_room("reviewers")
+    socketio.emit("reviewer_ready", {"reviewer_id": user.id})
     return {"joined": True}
 
 
