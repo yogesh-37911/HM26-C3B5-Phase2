@@ -1,13 +1,11 @@
 """ProofForge Cyber API. Synthetic demo defaults; PostgreSQL via DATABASE_URL."""
 
 import hashlib
-import hmac
-import base64
 import json
 import os
 import re
 import secrets
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta
 from functools import wraps
 
 from flask import Flask, jsonify, request
@@ -18,11 +16,9 @@ from flask_jwt_extended import (
     get_jwt,
     get_jwt_identity,
     jwt_required,
-    decode_token,
 )
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
-from flask_socketio import SocketIO, emit, join_room
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import check_password_hash, generate_password_hash
 from dotenv import load_dotenv
@@ -59,7 +55,6 @@ app.config.update(
 db.init_app(app)
 jwt = JWTManager(app)
 frontend_origins = [o.strip() for o in os.getenv("FRONTEND_ORIGIN", "http://localhost:5173").split(",") if o.strip()]
-socketio = SocketIO(app, async_mode="threading", cors_allowed_origins="*", logger=False, engineio_logger=False)
 
 CORS(
     app,
@@ -683,92 +678,6 @@ def role_required(*roles: str):
 @jwt.token_in_blocklist_loader
 def is_token_revoked(_jwt_header, jwt_payload):
     return TokenBlocklist.query.filter_by(jti=jwt_payload["jti"]).first() is not None
-
-
-def _secure_session(session_id):
-    return db.session.get(SecureAssessment, session_id)
-
-
-def _secure_access(session_row, user_id):
-    if not session_row or not user_id:
-        return False
-    user = db.session.get(User, user_id)
-    if not user:
-        return False
-    if user.role == "reviewer":
-        return True
-    return user_id == session_row.candidate_id
-
-
-def _secure_event_row(row, candidate, event_type, severity=None, metadata=None):
-    severity = severity or {
-        "SCREEN_SHARE_STOPPED": "critical", "NETWORK_DISCONNECTED": "critical",
-        "FULLSCREEN_EXITED": "warning",
-        "CAMERA_STOPPED": "warning", "MICROPHONE_STOPPED": "warning",
-        "TAB_VISIBILITY_CHANGED": "warning", "WINDOW_FOCUS_LOST": "warning",
-    }.get(event_type, "info")
-    event = SecureAssessmentEvent(assessment_id=row.id, candidate_id=candidate.id,
-        event_type=event_type, severity=severity,
-        metadata_json=json.dumps(metadata if isinstance(metadata, dict) else {}, separators=(",", ":"))[:2000])
-    db.session.add(event)
-    if severity in ("warning", "critical"):
-        row.warning_count += 1
-    db.session.commit()
-    return event
-
-
-def _purge_secure_assessment_data():
-    policy = db.session.get(SecureAssessmentPolicy, 1)
-    days = max(1, min(3650, policy.retention_days if policy else 30))
-    cutoff = datetime.utcnow() - timedelta(days=days)
-    old_sessions = [item.id for item in SecureAssessment.query.filter(SecureAssessment.status.in_(["ended", "submitted"]), SecureAssessment.ended_at < cutoff).all()]
-    if old_sessions:
-        SecureAssessmentEvent.query.filter(SecureAssessmentEvent.assessment_id.in_(old_sessions)).delete(synchronize_session=False)
-        SecureAssessment.query.filter(SecureAssessment.id.in_(old_sessions)).delete(synchronize_session=False)
-    SecureAssessmentEvent.query.filter(SecureAssessmentEvent.created_at < cutoff).delete(synchronize_session=False)
-    db.session.commit()
-
-
-def _secure_payload(row):
-    candidate = db.session.get(User, row.candidate_id)
-    reviewer = db.session.get(User, row.reviewer_id)
-    events = SecureAssessmentEvent.query.filter_by(assessment_id=row.id).order_by(SecureAssessmentEvent.created_at.desc()).limit(100).all()
-    if row.status in ("submitted", "ended"):
-        remaining = 0
-    elif row.started_at and row.status == "active":
-        elapsed_sec = int((datetime.now(timezone.utc).replace(tzinfo=None) - row.started_at).total_seconds())
-        remaining = max(0, row.duration_minutes * 60 - elapsed_sec)
-        if remaining == 0:
-            row.status = "submitted"
-            row.ended_at = datetime.utcnow()
-            row.camera = row.microphone = row.screen = False
-            try:
-                db.session.commit()
-            except Exception:
-                db.session.rollback()
-    else:
-        remaining = max(0, row.duration_minutes * 60)
-    return {
-        "id": row.id, "candidate_id": row.candidate_id, "candidate_name": candidate.name if candidate else "Candidate",
-        "reviewer_id": row.reviewer_id, "reviewer_name": reviewer.name if reviewer else "Reviewer",
-        "assessment_name": row.name, "status": row.status, "duration_minutes": row.duration_minutes,
-        "started_at": row.started_at.isoformat() + "Z" if row.started_at else None, "remaining_seconds": remaining,
-        "camera": row.camera, "microphone": row.microphone, "screen": row.screen, "fullscreen": row.fullscreen,
-        "connected": row.connected, "current_challenge": row.current_challenge, "warning_count": row.warning_count,
-        "targets": json.loads(row.allowed_targets or "[]"),
-        "events": [{"id": e.id, "type": e.event_type, "severity": e.severity,
-            "metadata": json.loads(e.metadata_json or "{}"), "created_at": e.created_at.isoformat() + "Z" if e.created_at else None,
-            "acknowledged": bool(e.acknowledged_at)} for e in events],
-        "policy": {"microphone_optional": policy.microphone_optional if policy else True,
-            "warning_threshold": policy.warning_threshold if policy else 1, "max_violations": policy.max_violations if policy else 5,
-            "retention_days": policy.retention_days if policy else 30,
-            "auto_pause": policy.auto_pause if policy else False, "auto_submit": policy.auto_submit if policy else False,
-            "fallback_meeting_url": policy.fallback_meeting_url if policy else "",
-            "resources": {"search_engines": policy.allow_search_engines if policy else False,
-                "documentation": policy.allow_documentation if policy else False, "github": policy.allow_github if policy else False,
-                "stackoverflow": policy.allow_stackoverflow if policy else False, "ai_tools": policy.allow_ai_tools if policy else False,
-                "external_websites": policy.allow_external_websites if policy else False}},
-    }
 
 
 # ---------------------------------------------------------------------------
@@ -1548,342 +1457,6 @@ def recruiter_proof(candidate_id: int):
                    proof_chain=[_proof_record(s, recruiter_safe=True) for s in records])
 
 
-# ---------------------------------------------------------------------------
-# Secure Assessment Mode
-# ---------------------------------------------------------------------------
-
-SECURE_EVENT_TYPES = frozenset({"ASSESSMENT_STARTED", "CAMERA_ENABLED", "MICROPHONE_ENABLED",
-    "SCREEN_SHARE_STARTED", "SCREEN_SHARE_STOPPED", "FULLSCREEN_ENTERED", "FULLSCREEN_EXITED",
-    "TAB_VISIBILITY_CHANGED", "WINDOW_FOCUS_LOST", "CAMERA_STOPPED", "MICROPHONE_STOPPED",
-    "NETWORK_DISCONNECTED", "NETWORK_CONNECTED", "ASSESSMENT_SUBMITTED", "ASSESSMENT_ENDED",
-    "ASSESSMENT_PAUSED", "ASSESSMENT_RESUMED", "WARNING_GENERATED"})
-
-
-@app.get("/api/secure-assessments/policy")
-@role_required("candidate", "reviewer")
-def secure_policy():
-    _purge_secure_assessment_data()
-    policy = db.session.get(SecureAssessmentPolicy, 1)
-    targets = AllowedAssessmentTarget.query.filter_by(active=True).order_by(AllowedAssessmentTarget.id).all()
-    return jsonify(policy={"duration_minutes": policy.duration_minutes if policy else 20,
-        "microphone_optional": policy.microphone_optional if policy else True,
-        "warning_threshold": policy.warning_threshold if policy else 1,
-        "max_violations": policy.max_violations if policy else 5,
-        "retention_days": policy.retention_days if policy else 30,
-        "auto_pause": policy.auto_pause if policy else False,
-        "auto_submit": policy.auto_submit if policy else False,
-        "fallback_meeting_url": policy.fallback_meeting_url if policy else "",
-        "resources": {"search_engines": policy.allow_search_engines if policy else False,
-            "documentation": policy.allow_documentation if policy else False, "github": policy.allow_github if policy else False,
-            "stackoverflow": policy.allow_stackoverflow if policy else False, "ai_tools": policy.allow_ai_tools if policy else False,
-            "external_websites": policy.allow_external_websites if policy else False}},
-        targets=[{"id": t.id, "name": t.name, "url": t.url, "authorization_note": t.authorization_note} for t in targets])
-
-
-@app.get("/api/secure-assessments/targets")
-@role_required("reviewer")
-def list_secure_targets():
-    return jsonify(targets=[{"id": t.id, "name": t.name, "url": t.url, "active": t.active,
-        "authorization_note": t.authorization_note} for t in AllowedAssessmentTarget.query.order_by(AllowedAssessmentTarget.id).all()])
-
-
-@app.patch("/api/secure-assessments/policy")
-@role_required("reviewer")
-def update_secure_policy():
-    policy = db.session.get(SecureAssessmentPolicy, 1)
-    if not policy:
-        policy = SecureAssessmentPolicy(id=1); db.session.add(policy)
-    d = request.get_json(silent=True) or {}
-    for field in ("microphone_optional", "auto_pause", "auto_submit", "allow_search_engines", "allow_documentation", "allow_github", "allow_stackoverflow", "allow_ai_tools", "allow_external_websites"):
-        if isinstance(d.get(field), bool): setattr(policy, field, d[field])
-    for field, low, high in (("duration_minutes", 5, 180), ("warning_threshold", 1, 20), ("max_violations", 1, 50), ("retention_days", 1, 3650)):
-        if field in d:
-            try: setattr(policy, field, max(low, min(high, int(d[field]))))
-            except (TypeError, ValueError): return jsonify(error=f"{field} must be a valid number."), 400
-    if "fallback_meeting_url" in d:
-        url = str(d["fallback_meeting_url"]).strip()[:500]
-        if url and not url.startswith("https://"): return jsonify(error="Fallback meeting links must use HTTPS."), 400
-        policy.fallback_meeting_url = url
-    db.session.commit()
-    return jsonify(updated=True)
-
-
-@app.post("/api/secure-assessments/targets")
-@role_required("reviewer")
-def create_secure_target():
-    d = request.get_json(silent=True) or {}
-    name, url = _strip_html(str(d.get("name", ""))).strip()[:120], str(d.get("url", "")).strip()[:500]
-    from urllib.parse import urlparse
-    parsed = urlparse(url)
-    if not name or parsed.scheme not in ("http", "https") or not parsed.hostname or parsed.username or parsed.password:
-        return jsonify(error="Enter a target name and an http(s) URL without embedded credentials."), 400
-    if parsed.hostname in ("localhost", "127.0.0.1", "::1") or parsed.hostname.endswith((".local", ".internal")):
-        return jsonify(error="Local and internal hostnames cannot be added as shared targets."), 400
-    if AllowedAssessmentTarget.query.filter_by(url=url).first():
-        return jsonify(error="This target is already configured."), 409
-    target = AllowedAssessmentTarget(name=name, url=url, active=False,
-        authorization_note=_strip_html(str(d.get("authorization_note", "Reviewer must document owner authorization and exact permitted scope before enabling this target.")))[:300])
-    db.session.add(target); db.session.commit()
-    return jsonify(id=target.id, name=target.name, url=target.url, active=target.active), 201
-
-
-@app.patch("/api/secure-assessments/targets/<int:target_id>")
-@role_required("reviewer")
-def update_secure_target(target_id):
-    target = db.session.get(AllowedAssessmentTarget, target_id)
-    if not target: return jsonify(error="Target not found."), 404
-    d = request.get_json(silent=True) or {}
-    if "authorization_note" in d: target.authorization_note = _strip_html(str(d["authorization_note"]))[:300]
-    if d.get("active") is True:
-        note = target.authorization_note.casefold()
-        if (len(target.authorization_note.strip()) < 50 or "disabled until" in note or "authorization pending" in note
-                or "reviewer must document" in note or not ("authoriz" in note or "permission" in note) or "scope" not in note):
-            return jsonify(error="Document the owner's authorization and exact testing scope in the target note before enabling it."), 400
-        target.active = True
-    elif d.get("active") is False: target.active = False
-    db.session.commit()
-    return jsonify(id=target.id, active=target.active)
-
-
-@app.post("/api/secure-assessments")
-@role_required("candidate")
-def create_secure_assessment():
-    d = request.get_json(silent=True) or {}
-    if d.get("consent") is not True:
-        return jsonify(error="Explicit consent is required before starting."), 400
-    candidate_id = _get_current_user_id()
-    # If candidate has an existing active or pending session, resume it
-    existing_active = SecureAssessment.query.filter_by(candidate_id=candidate_id).filter(SecureAssessment.status.in_(("active", "pending", "paused"))).order_by(SecureAssessment.created_at.desc()).first()
-    if existing_active:
-        return jsonify(session=_secure_payload(existing_active)), 200
-
-    # Once an assessment has ended/submitted, it cannot be retaken ("once it ends can't go back")
-    existing_ended = SecureAssessment.query.filter_by(candidate_id=candidate_id).filter(SecureAssessment.status.in_(("submitted", "ended"))).order_by(SecureAssessment.created_at.desc()).first()
-    if existing_ended:
-        return jsonify(error="Your secure assessment has already concluded. As per evaluation policy, completed assessments cannot be retaken or restarted.", session=_secure_payload(existing_ended)), 403
-
-    reviewer_email = os.getenv("SECURE_ASSESSMENT_REVIEWER_EMAIL", "samira.demo@example.invalid").lower()
-    reviewer = User.query.filter_by(email=reviewer_email, role="reviewer").first()
-    if not reviewer: return jsonify(error="No assigned reviewer is configured for secure assessments."), 503
-    policy = db.session.get(SecureAssessmentPolicy, 1)
-    targets = AllowedAssessmentTarget.query.filter_by(active=True).order_by(AllowedAssessmentTarget.id).all()
-    if not targets: return jsonify(error="No authorized target is enabled for this assessment."), 409
-    row = SecureAssessment(candidate_id=candidate_id, reviewer_id=reviewer.id,
-        duration_minutes=max(5, min(180, policy.duration_minutes if policy else 20)), consent_at=datetime.utcnow(),
-        allowed_targets=json.dumps([{"name": t.name, "url": t.url, "authorization_note": t.authorization_note} for t in targets]))
-    db.session.add(row); db.session.commit()
-    return jsonify(session=_secure_payload(row)), 201
-
-
-@app.get("/api/secure-assessments")
-@role_required("candidate", "reviewer")
-def get_secure_assessments():
-    user_id = _get_current_user_id()
-    user = db.session.get(User, user_id)
-    query = SecureAssessment.query.filter_by(candidate_id=user_id) if user.role == "candidate" else SecureAssessment.query
-    rows = query.order_by(SecureAssessment.created_at.desc()).limit(50).all()
-    return jsonify(sessions=[_secure_payload(row) for row in rows])
-
-
-@app.post("/api/secure-assessments/<session_id>/start")
-@role_required("candidate")
-def start_secure_assessment(session_id):
-    row = _secure_session(session_id); user_id = _get_current_user_id()
-    if not row or row.candidate_id != user_id: return jsonify(error="Assessment not found."), 404
-    if row.status != "pending": return jsonify(error="This assessment cannot be started."), 409
-    d = request.get_json(silent=True) or {}
-    if d.get("camera") is not True or d.get("screen") is not True or d.get("fullscreen") is not True:
-        return jsonify(error="Camera, screen share, and fullscreen must be active before the assessment starts."), 400
-    policy = db.session.get(SecureAssessmentPolicy, 1)
-    if policy and not policy.microphone_optional and d.get("microphone") is not True:
-        return jsonify(error="Microphone access is required by this assessment policy."), 400
-    row.status = "active"; row.started_at = datetime.utcnow(); row.camera = True
-    row.microphone = bool(d.get("microphone")); row.screen = True; row.fullscreen = True; row.connected = True
-    candidate = db.session.get(User, row.candidate_id)
-    _secure_event_row(row, candidate, "ASSESSMENT_STARTED", metadata={"camera": True, "microphone": row.microphone, "screen": True})
-    _secure_event_row(row, candidate, "CAMERA_ENABLED")
-    _secure_event_row(row, candidate, "SCREEN_SHARE_STARTED")
-    _secure_event_row(row, candidate, "FULLSCREEN_ENTERED")
-    if row.microphone: _secure_event_row(row, candidate, "MICROPHONE_ENABLED")
-    socketio.emit("assessment_update", {"session": _secure_payload(row), "event": "ASSESSMENT_STARTED"}, to=f"reviewer:{row.reviewer_id}")
-    socketio.emit("assessment_update", {"session": _secure_payload(row), "event": "ASSESSMENT_STARTED"}, to=f"assessment:{row.id}")
-    return jsonify(session=_secure_payload(row))
-
-
-@app.patch("/api/secure-assessments/<session_id>/status")
-@role_required("candidate")
-def update_secure_status(session_id):
-    row = _secure_session(session_id); user_id = _get_current_user_id()
-    if not row or row.candidate_id != user_id: return jsonify(error="Assessment not found."), 404
-    if row.status not in ("active", "paused"): return jsonify(error="Assessment is not active."), 409
-    d = request.get_json(silent=True) or {}
-    for key in ("camera", "microphone", "screen", "fullscreen", "connected"):
-        if isinstance(d.get(key), bool): setattr(row, key, d[key])
-    if isinstance(d.get("current_challenge"), str): row.current_challenge = _strip_html(d["current_challenge"])[:160]
-    db.session.commit()
-    payload = {"session": _secure_payload(row)}
-    socketio.emit("assessment_update", payload, to=f"reviewer:{row.reviewer_id}")
-    socketio.emit("assessment_update", payload, to=f"assessment:{row.id}")
-    return jsonify(session=payload["session"])
-
-
-@app.post("/api/secure-assessments/<session_id>/events")
-@role_required("candidate")
-def log_secure_event(session_id):
-    row = _secure_session(session_id); user_id = _get_current_user_id()
-    if not row or row.candidate_id != user_id: return jsonify(error="Assessment not found."), 404
-    if row.status not in ("active", "paused"): return jsonify(error="Security events can only be recorded for an active session."), 409
-    d = request.get_json(silent=True) or {}; event_type = d.get("type")
-    if event_type not in SECURE_EVENT_TYPES: return jsonify(error="Unsupported security event."), 400
-    candidate = db.session.get(User, user_id)
-    event = _secure_event_row(row, candidate, event_type, metadata=d.get("metadata", {}))
-    policy = db.session.get(SecureAssessmentPolicy, 1)
-    if policy and event.severity in ("warning", "critical") and row.warning_count == policy.warning_threshold:
-        _secure_event_row(row, candidate, "WARNING_GENERATED", metadata={"trigger": event_type, "warning_count": row.warning_count})
-    if event.severity == "critical" and policy and policy.auto_pause and row.status == "active": row.status = "paused"
-    automatic_submission = bool(policy and policy.auto_submit and row.warning_count >= policy.max_violations and event_type != "ASSESSMENT_SUBMITTED")
-    if automatic_submission:
-        _secure_event_row(row, candidate, "ASSESSMENT_SUBMITTED", metadata={"reason": "maximum_violations", "count": row.warning_count})
-    if event_type == "ASSESSMENT_SUBMITTED" or automatic_submission:
-        row.status = "submitted"; row.ended_at = datetime.utcnow()
-        row.camera = row.microphone = row.screen = False
-    db.session.commit()
-    payload = {"session": _secure_payload(row), "event": {"id": event.id, "type": event.event_type, "severity": event.severity, "metadata": json.loads(event.metadata_json), "created_at": event.created_at.isoformat() + "Z"}}
-    socketio.emit("assessment_event", payload, to=f"reviewer:{row.reviewer_id}")
-    socketio.emit("assessment_update", {"session": payload["session"]}, to=f"assessment:{row.id}")
-    return jsonify(payload), 201
-
-
-@app.post("/api/secure-assessments/<session_id>/acknowledge/<int:event_id>")
-@role_required("reviewer")
-def acknowledge_secure_event(session_id, event_id):
-    row = _secure_session(session_id); reviewer_id = _get_current_user_id()
-    event = db.session.get(SecureAssessmentEvent, event_id)
-    if not row or row.reviewer_id != reviewer_id or not event or event.assessment_id != row.id: return jsonify(error="Event not found."), 404
-    event.acknowledged_at = datetime.utcnow(); event.acknowledged_by = reviewer_id; db.session.commit()
-    socketio.emit("assessment_update", {"session": _secure_payload(row)}, to=f"assessment:{row.id}")
-    return jsonify(acknowledged=True)
-
-
-@app.post("/api/secure-assessments/<session_id>/control")
-@role_required("candidate", "reviewer")
-def control_secure_assessment(session_id):
-    row = _secure_session(session_id); actor_id = _get_current_user_id()
-    actor = db.session.get(User, actor_id) if actor_id else None
-    if not row or not actor or actor.id not in (row.reviewer_id, row.candidate_id): return jsonify(error="Assessment not found."), 404
-    action = (request.get_json(silent=True) or {}).get("action")
-    if actor.role == "candidate" and action != "end": return jsonify(error="Candidates may only end their own secure assessment."), 403
-    if action == "pause" and row.status == "active": row.status = "paused"; event_type = "ASSESSMENT_PAUSED"
-    elif action == "resume" and row.status == "paused": row.status = "active"; event_type = "ASSESSMENT_RESUMED"
-    elif action == "end" and row.status in ("active", "paused", "pending"):
-        row.status = "ended"; row.ended_at = datetime.utcnow(); row.camera = row.microphone = row.screen = False; event_type = "ASSESSMENT_ENDED"
-    else: return jsonify(error="Unsupported control for current assessment state."), 400
-    candidate = db.session.get(User, row.candidate_id); _secure_event_row(row, candidate, event_type)
-    payload = {"session": _secure_payload(row), "control": action}
-    socketio.emit("assessment_control", payload, to=f"assessment:{row.id}")
-    socketio.emit("assessment_update", payload, to=f"reviewer:{row.reviewer_id}")
-    return jsonify(session=payload["session"])
-
-
-@app.get("/api/secure-assessments/<session_id>/ice-servers")
-@role_required("candidate", "reviewer")
-def secure_ice_servers(session_id):
-    row = _secure_session(session_id); user_id = _get_current_user_id()
-    if not _secure_access(row, user_id): return jsonify(error="Assessment not found."), 404
-    ice = [{"urls": os.getenv("STUN_URL", "stun:stun.l.google.com:19302")}]
-    turn_url, turn_secret = os.getenv("TURN_URL", ""), os.getenv("TURN_SHARED_SECRET", "")
-    if turn_url and turn_secret:
-        expiry = int(datetime.now(timezone.utc).timestamp()) + 3600
-        username = f"{expiry}:{user_id}:{row.id[:8]}"
-        credential = base64.b64encode(hmac.new(turn_secret.encode(), username.encode(), hashlib.sha1).digest()).decode()
-        ice.append({"urls": turn_url.split(","), "username": username, "credential": credential})
-    return jsonify(ice_servers=ice)
-
-
-_SOCKET_CLIENTS = {}
-_ASSESSMENT_SOCKET_USERS = {}
-
-
-@socketio.on("connect")
-def socket_connect(auth=None):
-    token = (auth or {}).get("token", "")
-    if not token and hasattr(request, "args"):
-        token = request.args.get("token", "")
-    user_id = None
-    role = "anonymous"
-    if token:
-        try:
-            claims = decode_token(token)
-            if not TokenBlocklist.query.filter_by(jti=claims.get("jti")).first():
-                uid = int(claims.get("sub"))
-                user = db.session.get(User, uid)
-                if user:
-                    user_id = user.id
-                    role = user.role
-        except Exception:
-            pass
-    _SOCKET_CLIENTS[request.sid] = {"user_id": user_id, "role": role}
-
-
-@socketio.on("disconnect")
-def socket_disconnect():
-    _SOCKET_CLIENTS.pop(request.sid, None)
-    for assessment_users in _ASSESSMENT_SOCKET_USERS.values():
-        assessment_users.pop(request.sid, None)
-
-
-@socketio.on("join_assessment")
-def socket_join_assessment(data):
-    assessment_id = str((data or {}).get("assessment_id", ""))
-    info = _SOCKET_CLIENTS.get(request.sid, {})
-    row = _secure_session(assessment_id)
-    if not row or info.get("user_id") not in (row.candidate_id, row.reviewer_id):
-        return {"joined": False}
-    join_room(f"assessment:{assessment_id}")
-    _ASSESSMENT_SOCKET_USERS.setdefault(assessment_id, {})[request.sid] = info["user_id"]
-    if info["user_id"] == row.reviewer_id:
-        socketio.emit("reviewer_ready", {"assessment_id": assessment_id}, to=f"assessment:{assessment_id}", include_self=False)
-    return {"joined": True}
-
-
-@socketio.on("candidate_ready")
-def socket_candidate_ready(data):
-    assessment_id = str((data or {}).get("assessment_id", ""))
-    info = _SOCKET_CLIENTS.get(request.sid, {})
-    row = _secure_session(assessment_id)
-    users = _ASSESSMENT_SOCKET_USERS.get(assessment_id, {})
-    reviewer_present = bool(row and info.get("user_id") == row.candidate_id and row.reviewer_id in users.values())
-    if reviewer_present:
-        socketio.emit("reviewer_ready", {"assessment_id": assessment_id}, to=request.sid)
-    return {"reviewer_present": reviewer_present}
-
-
-@socketio.on("join_reviewer")
-def socket_join_reviewer():
-    info = _SOCKET_CLIENTS.get(request.sid, {})
-    user = db.session.get(User, info.get("user_id")) if info.get("user_id") else None
-    if not user or user.role != "reviewer":
-        return {"joined": False}
-    join_room(f"reviewer:{user.id}")
-    return {"joined": True}
-
-
-@socketio.on("rtc_signal")
-def socket_rtc_signal(data):
-    assessment_id = str((data or {}).get("assessment_id", ""))
-    info = _SOCKET_CLIENTS.get(request.sid, {})
-    row = _secure_session(assessment_id)
-    if not row or info.get("user_id") not in (row.candidate_id, row.reviewer_id):
-        return
-    if data.get("kind") not in ("camera", "screen") or data.get("type") not in ("offer", "answer", "ice"):
-        return
-    signal = data.get("payload")
-    if not isinstance(signal, dict) or len(json.dumps(signal, separators=(",", ":"))) > 64000:
-        return
-    payload = {"assessment_id": assessment_id, "kind": data["kind"], "type": data["type"], "payload": signal}
-    socketio.emit("rtc_signal", payload, to=f"assessment:{assessment_id}", include_self=False)
-
-
 @app.post("/api/documents")
 @jwt_required()
 def upload_document():
@@ -2068,7 +1641,7 @@ def reset_demo_candidate():
     Audit.query.delete(synchronize_session=False)
     db.session.commit()
     return jsonify(
-        message="Candidate results, review records, secure assessment data, recruiter approvals, interviews, and audit entries were reset. User accounts were preserved.",
+        message="Candidate results, review records, legacy monitoring records, recruiter approvals, interviews, and audit entries were reset. User accounts were preserved.",
         status="clean",
         reset_at=datetime.utcnow().isoformat() + "Z",
     )
@@ -2115,33 +1688,7 @@ def internal_error(e):
 
 with app.app_context():
     db.create_all()
-    policy = db.session.get(SecureAssessmentPolicy, 1)
-    if not policy:
-        db.session.add(SecureAssessmentPolicy(id=1, allow_search_engines=True, allow_documentation=True, allow_github=True, allow_stackoverflow=True, allow_ai_tools=True, allow_external_websites=True))
-    else:
-        # Ensure at least standard research documentation & resources are enabled
-        policy.allow_documentation = True
-        policy.allow_search_engines = True
-        policy.allow_github = True
-        policy.allow_stackoverflow = True
-    initial_targets = [
-        ("Google Gruyere (Vulnerable App)", "https://google-gruyere.appspot.com/", True,
-         "Follow the Gruyere codelab scope and stop at its documented boundaries."),
-        ("Acunetix VulnWeb ASP.NET", "http://testaspnet.vulnweb.com/", True,
-         "Intentionally vulnerable scanner test site; use only non-destructive validation."),
-        ("OWASP Juice Shop Sandbox", "https://juice-shop.herokuapp.com/", True,
-         "Authorized web security training lab environment."),
-        ("ProofForge Lab Sandbox", "http://localhost:5000/api/labs", True,
-         "Local isolated testing sandbox for cybersecurity lab scenarios."),
-    ]
-    for name, url, active, note in initial_targets:
-        existing = AllowedAssessmentTarget.query.filter_by(url=url).first()
-        if not existing:
-            db.session.add(AllowedAssessmentTarget(name=name, url=url, active=active, authorization_note=note))
-        elif not existing.active:
-            existing.active = True
-    db.session.commit()
 
 
 if __name__ == "__main__":
-    socketio.run(app, host=os.getenv("HOST", "0.0.0.0"), port=int(os.getenv("PORT", "5000")), debug=False, allow_unsafe_werkzeug=True)
+    app.run(host=os.getenv("HOST", "0.0.0.0"), port=int(os.getenv("PORT", "5000")), debug=False)

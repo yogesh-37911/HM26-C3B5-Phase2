@@ -15,14 +15,6 @@ The root [render.yaml](../render.yaml) is a Render Blueprint that provisions:
 
 The Blueprint assumes Render assigns `https://proofforge-cyber.onrender.com` to the static site and `https://proofforge-api.onrender.com` to the API. If you rename either service or add a custom domain, update `FRONTEND_ORIGIN`, the static site's `VITE_API_BASE_URL`, and its Content-Security-Policy `connect-src` to match. Redeploy both services after changing them.
 
-## Secure Assessment Mode on Render
-
-The API start command uses one Gunicorn `gthread` worker (100 threads) for Flask-SocketIO/WebSocket connections. Keep it at one worker unless you add a shared Socket.IO message queue and validate routing/session behavior. Render TLS provides secure browser contexts and WSS. The static-site security headers allow camera, microphone, display capture, fullscreen, API/WebSocket signaling, and WebRTC ICE connections.
-
-Set `SECURE_ASSESSMENT_REVIEWER_EMAIL` to the reviewer account assigned to new sessions. `STUN_URL` is configured for basic ICE discovery. Set `TURN_URL` and `TURN_SHARED_SECRET` as private API environment values to enable TURN REST credentials; use a coturn-compatible shared-secret configuration. The secret never goes into the static Vite bundle. Without TURN, some candidates/reviewers behind restrictive NAT or corporate firewalls may not get a media path. Set the fallback HTTPS meeting URL in the reviewer Secure Assessments policy when a fallback is needed.
-
-The reviewer Secure Assessments workspace configures allowed targets and candidate-visible resource rules. Newly added targets start disabled. Configure real browser kiosk policy and network/DNS/proxy egress allowlisting separately; frontend policy checkboxes do not enforce network restrictions. Google Gruyere and Acunetix Test ASP.NET are enabled demo labs; Hack Mysuru remains disabled pending its operator's written authorization and scope. See [secure-assessment.md](secure-assessment.md) for privacy, consent, browser limitations, event retention, and rollout details.
-
 ## Demo sign-in accounts
 
 The sign-in screen includes these synthetic accounts:
@@ -41,7 +33,7 @@ The Blueprint uses Free plans for a hackathon demo. Render's current Free Postgr
 
 ## What is hosted
 
-The sign-in flow authenticates against the Flask API. Passwords are stored as scrypt hashes, role selection is based on the server's account record, login attempts are rate limited, and sign-out revokes the current access token. Access tokens live in browser session storage for up to four hours. Candidate proof metrics and assessment scores persist to PostgreSQL per account; unfinished question-by-question progress is saved in that browser under the candidate's email. Other workspace actions remain synthetic and browser-local.
+The sign-in flow authenticates against the Flask API. Passwords are stored as scrypt hashes, role selection is based on the server's account record, login attempts are rate limited, and sign-out revokes the current access token. Access tokens live in browser session storage for up to four hours. Candidate proof metrics and assessment scores persist to PostgreSQL per account; unfinished question-by-question progress is saved in that browser under the candidate's email. The standard assessment timer starts on Begin and continues through page refreshes. Other workspace actions remain synthetic and browser-local.
 
 The API database is initialized with SQLAlchemy `create_all` at service startup. This creates new tables but is not a versioned migration system. Back up data and use proper migrations before schema changes on a database with records.
 

@@ -13,28 +13,22 @@ flowchart LR
   API --> Audit[Audit events]
   API --> Hash[Evidence SHA-256]
   C --> Lab[Authorized isolated lab]
-  C -. camera and screen via WebRTC DTLS-SRTP .-> R
-  C <-->|JWT-authenticated WSS signaling and events| API
   Policy[Managed browser and network allowlist] --> Lab
 ```
 
 ## Frontend
 
-Vite serves a responsive React/TypeScript client with role-specific workspaces, lab and handbook pages, finding/report flows, assessment interactions, reviewer queue, and synthetic recruiter discovery. Secure Assessment Mode is an additive React component inside the existing Candidate Assessments and Reviewer workspaces.
+Vite serves a responsive React/TypeScript client with role-specific workspaces, lab and handbook pages, finding/report flows, assessment interactions, reviewer queue, and synthetic recruiter discovery. Candidates take a standard timed questionnaire; reviewer tools show assessment results without live monitoring.
 
 ## Backend and database
 
-SQLAlchemy models cover users, findings/submissions, interview invitations and audit events. Secure assessment sessions, allowed targets, global assessment policy, and event/acknowledgement records are additive models. PostgreSQL is configured through `DATABASE_URL`; SQLite is the zero-setup development default. The assessment answer keys are defined only in the API module.
+SQLAlchemy models cover users, findings/submissions, interview invitations and audit events. PostgreSQL is configured through `DATABASE_URL`; SQLite is the zero-setup development default. The assessment answer keys are defined only in the API module.
 
 Additive tables persist reviewer defense prompts and responses, server-scored assessment section results, and reviewer rubric metrics. Existing submission records and role model remain in place.
 
 ## Authentication and access control
 
-The API uses password hashing, short-lived JWTs, role decorators, candidate-owned submission scoping, reviewer-only decisions and recruiter-only candidate discovery/invitation creation. Registration restricts the role to the three supported roles. Secure session APIs and Socket.IO/WebSocket signaling authenticate the JWT and authorize only the session's candidate and assigned reviewer.
-
-Camera and display capture use explicit browser prompts after consent. WebRTC transports media peer-to-peer; the API stores status/events and relays only WebRTC signaling. No audio/video recording is persisted. STUN is configured by environment, with optional server-minted short-lived TURN REST credentials.
-
-Allowed targets are reviewer-managed and copied into each session. This is a scope display and application workflow feature, not a network firewall. Real external-site restriction requires managed browser/kiosk policy plus DNS/proxy/firewall egress allowlisting. Browser JavaScript cannot lock down the operating system.
+The API uses password hashing, short-lived JWTs, role decorators, candidate-owned submission scoping, reviewer-only decisions and recruiter-only candidate discovery/invitation creation. Registration restricts the role to the three supported roles.
 
 ## Lab isolation
 

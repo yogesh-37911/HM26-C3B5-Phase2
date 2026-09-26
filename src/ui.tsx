@@ -66,7 +66,6 @@ import {
   AssessmentQuestion,
 } from './assessmentQuestions';
 import { TOOLBOX_CATEGORIES, TOOLBOX_TOOLS } from './toolboxData';
-import SecureAssessment from './SecureAssessment';
 
 // ---------------------------------------------------------------------------
 // Types & Constants
@@ -299,7 +298,6 @@ const PAGE_ICON_MAP: Record<string, React.ElementType> = {
   'Handbook': BookOpen,
   'Toolbox': Terminal,
   'Assessments': CircleHelp,
-  'Secure Assessments': Video,
   'Findings': FileCheck2,
   'Reports': FileText,
   'Uploaded Documents': FileText,
@@ -740,7 +738,7 @@ export default function App() {
       return;
     }
     const confirmed = window.confirm(
-      'Reset all candidate assessment answers and scores, findings and reports, reviewer decisions, secure assessment sessions and events, recruiter approvals, and interview records? This cannot be undone. Login accounts will remain so candidates and staff can sign in again.'
+      'Reset all candidate assessment answers and scores, findings and reports, reviewer decisions, recruiter approvals, and interview records? This cannot be undone. Login accounts will remain so candidates and staff can sign in again.'
     );
     if (!confirmed) return;
 
@@ -882,6 +880,8 @@ export default function App() {
   const [selectedAnswers, setSelectedAnswers] = useState<Record<number, number>>({});
   const [assessmentTimeLeft, setAssessmentTimeLeft] = useState(1200);
   const [assessmentSubmitted, setAssessmentSubmitted] = useState(false);
+  const [assessmentStartedAt, setAssessmentStartedAt] = useState<number | null>(null);
+  const submitAssessmentRef = useRef<(timeExpired?: boolean) => Promise<void>>(async () => {});
 
   useEffect(() => {
     let active = true;
@@ -930,7 +930,7 @@ export default function App() {
 
   useEffect(() => {
     if (!auth || auth.role !== 'Candidate') {
-      setCurrentQIndex(0); setSelectedAnswers({}); setAssessmentTimeLeft(1200); setAssessmentSubmitted(false); setAssessmentSyncStatus('none');
+      setCurrentQIndex(0); setSelectedAnswers({}); setAssessmentTimeLeft(1200); setAssessmentSubmitted(false); setAssessmentStartedAt(null); setAssessmentSyncStatus('none');
       return;
     }
     try {
@@ -940,50 +940,46 @@ export default function App() {
       const savedSubmitted = localStorage.getItem(assessmentProgressKey(auth.email, 'submitted'));
       const savedSync = localStorage.getItem(assessmentProgressKey(auth.email, 'sync'));
       const savedStartedAt = localStorage.getItem(assessmentProgressKey(auth.email, 'startedAt'));
+      const startedAt = savedStartedAt && Number.isFinite(Number(savedStartedAt)) ? Number(savedStartedAt) : null;
+      const isSubmitted = savedSubmitted === 'true';
       setCurrentQIndex(savedIndex ? Math.min(39, Math.max(0, Number(savedIndex))) : 0);
       setSelectedAnswers(savedAnswers ? JSON.parse(savedAnswers) : {});
-      if (savedStartedAt && savedSubmitted !== 'true') {
-        const elapsed = Math.floor((Date.now() - Number(savedStartedAt)) / 1000);
+      setAssessmentStartedAt(startedAt);
+      if (startedAt && !isSubmitted) {
+        const elapsed = Math.floor((Date.now() - startedAt) / 1000);
         const remaining = Math.max(0, 1200 - elapsed);
         setAssessmentTimeLeft(remaining);
-        if (remaining <= 0) {
-          setAssessmentSubmitted(true);
-          saveAssessmentProgress(auth.email, 'submitted', 'true');
-          saveAssessmentProgress(auth.email, 'timeLeft', '0');
-        }
       } else {
-        setAssessmentTimeLeft(savedSubmitted === 'true' ? 0 : savedTime ? Math.min(1200, Math.max(0, Number(savedTime))) : 1200);
+        setAssessmentTimeLeft(isSubmitted ? 0 : savedTime ? Math.min(1200, Math.max(0, Number(savedTime))) : 1200);
       }
-      setAssessmentSubmitted(savedSubmitted === 'true');
+      setAssessmentSubmitted(isSubmitted);
+      if (isSubmitted) setAssessmentTimeLeft(0);
       setAssessmentSyncStatus(savedSync === 'verified' ? 'verified' : savedSync === 'local' ? 'local' : 'none');
     } catch {
-      setCurrentQIndex(0); setSelectedAnswers({}); setAssessmentTimeLeft(1200); setAssessmentSubmitted(false); setAssessmentSyncStatus('none');
+      setCurrentQIndex(0); setSelectedAnswers({}); setAssessmentTimeLeft(1200); setAssessmentSubmitted(false); setAssessmentStartedAt(null); setAssessmentSyncStatus('none');
     }
   }, [auth?.email, auth?.role]);
 
   // Continuous timer ticker: runs in real-time, even if modal is closed, until 20 mins expire!
   useEffect(() => {
-    if (!auth || auth.role !== 'Candidate' || assessmentSubmitted) return;
-    const startedAtStr = localStorage.getItem(assessmentProgressKey(auth.email, 'startedAt'));
-    if (!startedAtStr) return;
+    if (!auth || auth.role !== 'Candidate' || assessmentSubmitted || !assessmentStartedAt) return;
 
     const tick = () => {
-      const startedAt = Number(startedAtStr);
-      const elapsed = Math.floor((Date.now() - startedAt) / 1000);
+      const elapsed = Math.floor((Date.now() - assessmentStartedAt) / 1000);
       const remaining = Math.max(0, 1200 - elapsed);
       setAssessmentTimeLeft(remaining);
       saveAssessmentProgress(auth.email, 'timeLeft', String(remaining));
       if (remaining <= 0) {
         setAssessmentSubmitted(true);
         saveAssessmentProgress(auth.email, 'submitted', 'true');
-        void submitAssessment(true);
+        void submitAssessmentRef.current(true);
       }
     };
 
     tick();
     const timer = setInterval(tick, 1000);
     return () => clearInterval(timer);
-  }, [auth?.email, auth?.role, assessmentSubmitted]);
+  }, [auth?.email, auth?.role, assessmentSubmitted, assessmentStartedAt]);
 
   const formatTime = (seconds: number) => {
     const m = Math.floor(seconds / 60);
@@ -1041,6 +1037,29 @@ export default function App() {
       saveAssessmentProgress(auth.email, 'submitted', 'true');
       if (timeExpired) saveAssessmentProgress(auth.email, 'timeLeft', '0');
       setAssessmentSaving(false);
+    }
+  };
+  submitAssessmentRef.current = submitAssessment;
+
+  const beginTimedAssessment = (questionIndex = 0) => {
+    if (!auth || auth.role !== 'Candidate') return;
+    if (assessmentSubmitted) {
+      setModal('assessment');
+      return;
+    }
+    const savedStart = Number(localStorage.getItem(assessmentProgressKey(auth.email, 'startedAt')));
+    const startedAt = assessmentStartedAt ?? (Number.isFinite(savedStart) && savedStart > 0 ? savedStart : Date.now());
+    setAssessmentStartedAt(startedAt);
+    saveAssessmentProgress(auth.email, 'startedAt', String(startedAt));
+    const remaining = Math.max(0, 1200 - Math.floor((Date.now() - startedAt) / 1000));
+    setAssessmentTimeLeft(remaining);
+    setCurrentQIndex(questionIndex);
+    setModal('assessment');
+    if (remaining <= 0) {
+      setAssessmentSubmitted(true);
+      saveAssessmentProgress(auth.email, 'submitted', 'true');
+      saveAssessmentProgress(auth.email, 'timeLeft', '0');
+      void submitAssessmentRef.current(true);
     }
   };
 
@@ -1164,7 +1183,7 @@ export default function App() {
     role === 'Candidate'
       ? ['Overview', 'Security Labs', 'Handbook', 'Toolbox', 'Assessments', 'Findings', 'Reports', 'Proof Profile', 'Interviews']
       : role === 'Reviewer'
-        ? ['Overview', 'Secure Assessments', 'Labs', 'Findings', 'Uploaded Documents', 'Reviews', 'Question Bank', 'Flagged Findings', 'Rankings']
+        ? ['Overview', 'Labs', 'Findings', 'Uploaded Documents', 'Reviews', 'Question Bank', 'Flagged Findings', 'Rankings']
         : ['Overview', 'Find Security Talent', 'Security Profiles', 'Saved Candidates', 'Interviews'];
 
   const doNav = (s: string) => {
@@ -1659,38 +1678,21 @@ export default function App() {
               const percentDone = Math.round((answeredCount / ALL_ASSESSMENT_QUESTIONS.length) * 100);
               return (
                 <>
-                  <SecureAssessment role="Candidate" token={auth.token}
-                    onLaunchAssessment={(durationMinutes) => {
-                      const initialTime = Math.max(1, durationMinutes) * 60;
-                      const existingStart = localStorage.getItem(assessmentProgressKey(auth.email, 'startedAt'));
-                      if (!existingStart) {
-                        saveAssessmentProgress(auth.email, 'startedAt', String(Date.now()));
-                      }
-                      setAssessmentTimeLeft(initialTime);
-                      saveAssessmentProgress(auth.email, 'timeLeft', String(initialTime));
-                      const firstUnanswered = ALL_ASSESSMENT_QUESTIONS.findIndex(q => selectedAnswers[q.id] === undefined);
-                      setCurrentQIndex(firstUnanswered >= 0 ? firstUnanswered : 0);
-                      setModal('assessment');
-                    }}
-                    onAssessmentEnded={() => setModal('')}
-                    onAutoSubmitAssessment={() => void submitAssessment(true)}
-                    currentChallenge={`Section ${String((ALL_ASSESSMENT_QUESTIONS[currentQIndex]?.sectionIndex ?? 0) + 1).padStart(2, '0')} · Question ${currentQIndex + 1}`}
-                    assessmentSubmitted={assessmentSubmitted} />
                   <PageIntro
                     eyebrow="SHOW HOW YOU THINK"
-                    title="Security assessment"
+                    title="Assessment"
                     sub="40 questions across four domains in sequential order · 20-minute overall timer · scored server-side."
                   />
-                  <div className="secure-disclaimer-card" style={{ marginBottom: 20 }}>
-                    <div className="secure-disclaimer-header">
-                      <AlertTriangle className="secure-disclaimer-icon" size={17} />
-                      <span>CRITICAL CANDIDATE NOTICE: STRICT CONTINUOUS TIMER &amp; SINGLE ATTEMPT</span>
+                  <div className="assessment-rules-card" style={{ marginBottom: 20 }}>
+                    <div className="assessment-rules-header">
+                      <AlertTriangle size={17} />
+                      <span>BEFORE YOU BEGIN</span>
                     </div>
                     <p>
-                      Please read carefully before starting your security assessment:
+                      Please read these assessment rules before you begin:
                     </p>
                     <ul>
-                      <li><strong>Continuous Live Timer:</strong> Once the assessment begins, <strong>the timer DOES NOT STOP</strong>. Closing this modal, navigating away from this tab, or exiting your browser will <u>NOT pause or stop the timer</u>. It counts down continuously in real-time until the 20 minutes expire.</li>
+                      <li><strong>20-minute timer:</strong> It starts when you begin and keeps running if you close the assessment or refresh the page.</li>
                       <li><strong>Single Attempt (Cannot Go Back):</strong> Once the timer expires or the assessment is submitted, <strong>you CANNOT go back or retake the assessment</strong>. Your responses are permanently recorded.</li>
                       <li><strong>One Uninterrupted Session:</strong> Ensure you are ready and have a stable internet connection before beginning.</li>
                     </ul>
@@ -1711,18 +1713,7 @@ export default function App() {
                     </div>
                     <button
                       className="button primary"
-                      onClick={() => {
-                        if (!assessmentSubmitted) {
-                          const existingStart = localStorage.getItem(assessmentProgressKey(auth.email, 'startedAt'));
-                          if (!existingStart) {
-                            saveAssessmentProgress(auth.email, 'startedAt', String(Date.now()));
-                          }
-                        }
-                        // Resume from first unanswered question or 0
-                        const firstUnanswered = ALL_ASSESSMENT_QUESTIONS.findIndex(q => selectedAnswers[q.id] === undefined);
-                        setCurrentQIndex(firstUnanswered >= 0 ? firstUnanswered : 0);
-                        setModal('assessment');
-                      }}
+                      onClick={() => beginTimedAssessment(Math.max(0, ALL_ASSESSMENT_QUESTIONS.findIndex(q => selectedAnswers[q.id] === undefined)))}
                     >
                       {assessmentSubmitted ? (
                         <>View score report <Award size={15} /></>
@@ -1752,11 +1743,9 @@ export default function App() {
                           key={secName}
                           style={{ cursor: 'pointer' }}
                           onClick={() => {
-                            if (!assessmentSubmitted) {
-                              const existingStart = localStorage.getItem(assessmentProgressKey(auth.email, 'startedAt'));
-                              if (!existingStart) {
-                                saveAssessmentProgress(auth.email, 'startedAt', String(Date.now()));
-                              }
+                            if (!assessmentStartedAt && !assessmentSubmitted) {
+                              notify('Choose Begin assessment to start the timer first.');
+                              return;
                             }
                             setCurrentQIndex(i * 10);
                             setModal('assessment');
@@ -1791,14 +1780,6 @@ export default function App() {
                 </>
               );
             })()
-          )}
-
-          {role === 'Reviewer' && page === 'Secure Assessments' && (
-            <>
-              <PageIntro eyebrow="CONSENT BASED PROCTORING" title="Secure assessment monitoring"
-                sub="Monitor only assessments assigned to your reviewer account. Browser-level signals are recorded; media is not stored." />
-              <SecureAssessment role="Reviewer" token={auth.token} />
-            </>
           )}
 
           {/* ── Candidate: Findings / Reports / Profile / Interviews ── */}
@@ -2414,7 +2395,7 @@ export default function App() {
                       <div>
                         <strong style={{ color: '#4d5c49' }}>ASSESSMENT PIPELINE · CANDIDATE READY</strong>
                         <p style={{ margin: '3px 0 0', fontSize: 11, color: '#687764' }}>
-                          Candidate has not started the technical assessment yet. Real-time proctoring and score audit will appear here once submitted.
+                          Candidate has not started the technical assessment yet. Their score details will appear here after submission.
                         </p>
                       </div>
                     </div>

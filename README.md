@@ -24,7 +24,6 @@ ProofForge is a React client backed by a modular Flask API and PostgreSQL data s
 
 The Security DNA, defense and recruiter proof endpoints are documented in [docs/api.md](docs/api.md).
 
-Secure Assessment Mode adds explicit browser permission consent, candidate camera preview, browser screen capture, fullscreen and focus/visibility monitoring, server-side security events, assigned-reviewer monitoring and peer-to-peer WebRTC. Setup, target-scope rules, TURN, privacy, and managed kiosk/network architecture are in [docs/secure-assessment.md](docs/secure-assessment.md).
 
 ## 5. Tech Stack & AI Usage
 
@@ -57,10 +56,10 @@ The API uses SQLite for zero-setup local demonstration. To use PostgreSQL, start
 
 ### Deploy from GitHub to Render
 
-Push the repository to GitHub, then create a **Blueprint** in Render and select that repository. The root [render.yaml](render.yaml) defines the static frontend, Flask API, and PostgreSQL database. After deployment, check the API service's `/api/health` route and open the static-site URL. Authentication, candidate scores, and Secure Assessment Mode use the API; other existing workspace areas still contain synthetic demonstration data. See [docs/deployment.md](docs/deployment.md).
+Push the repository to GitHub, then create a **Blueprint** in Render and select that repository. The root [render.yaml](render.yaml) defines the static frontend, Flask API, and PostgreSQL database. After deployment, check the API service's `/api/health` route and open the static-site URL. Authentication, candidate scores, and standard timed assessments use the API; other existing workspace areas still contain synthetic demonstration data. See [docs/deployment.md](docs/deployment.md).
 
 The login page uses role-scoped API authentication. Demo workspace data remains synthetic except where the UI explicitly saves records to the API.
 
 ## 8. Known Limitations
 
-Labs are contained training-flow demonstrations, not provisioned vulnerable Docker targets. WebRTC uses direct peer media and needs an organization TURN service for some network topologies. Browser controls do not provide OS-level kiosk lockdown. See [Secure Assessment Mode](docs/secure-assessment.md) and the [limitations and roadmap](docs/limitations.md) before production use.
+Labs are contained training-flow demonstrations, not provisioned vulnerable Docker targets. See the [limitations and roadmap](docs/limitations.md) before production use.

@@ -33,24 +33,3 @@ All routes are under `/api`, use the existing JWT bearer token and preserve the 
 ## Assessment scores
 
 `POST /assessments/{section}/score` remains the only scoring path. It persists a server-calculated section score; answer indexes remain server-side and never appear in the question response.
-# Secure Assessment Mode
-
-All endpoints below require an API JWT. Candidate requests are limited to the authenticated candidate's own assessment sessions; reviewer endpoints return only sessions assigned to the authenticated reviewer.
-
-| Method | Endpoint | Access | Purpose |
-| --- | --- | --- | --- |
-| `GET` | `/api/secure-assessments/policy` | Candidate, reviewer | Candidate-visible permission/rules policy and enabled targets |
-| `GET` | `/api/secure-assessments/targets` | Reviewer | View target scope and activation status |
-| `POST` | `/api/secure-assessments/targets` | Reviewer | Add a disabled-by-default target |
-| `PATCH` | `/api/secure-assessments/targets/{id}` | Reviewer | Activate/deactivate target and update scope note |
-| `PATCH` | `/api/secure-assessments/policy` | Reviewer | Configure resource policy, warning thresholds, retention, fallback, and controls |
-| `POST` | `/api/secure-assessments` | Candidate | Create a session after explicit consent and snapshot enabled targets |
-| `POST` | `/api/secure-assessments/{id}/start` | Candidate owner | Activate after browser camera/screen permission succeeds |
-| `GET` | `/api/secure-assessments` | Candidate, reviewer | List own sessions or sessions assigned to reviewer |
-| `PATCH` | `/api/secure-assessments/{id}/status` | Candidate owner | Update browser capability/sharing/fullscreen/connectivity status |
-| `POST` | `/api/secure-assessments/{id}/events` | Candidate owner | Record an allowlisted security event |
-| `POST` | `/api/secure-assessments/{id}/acknowledge/{event}` | Assigned reviewer | Acknowledge an event |
-| `POST` | `/api/secure-assessments/{id}/control` | Assigned reviewer; candidate may end own session | Pause, resume, or end session |
-| `GET` | `/api/secure-assessments/{id}/ice-servers` | Session candidate/reviewer | Return STUN and optional short-lived TURN configuration |
-
-Flask-SocketIO events: authenticated `connect` uses `auth.token`; `join_reviewer` joins only the current reviewer's alert room; `join_assessment` checks candidate/reviewer session membership; `rtc_signal` relays only `offer`, `answer`, or `ice` messages for the authorized session and the camera/screen channels. The socket carries signaling and status events, not recorded media.

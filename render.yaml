@@ -18,14 +18,6 @@ services:
         generateValue: true
       - key: FRONTEND_ORIGIN
         value: "*"
-      - key: SECURE_ASSESSMENT_REVIEWER_EMAIL
-        value: samira.demo@example.invalid
-      - key: STUN_URL
-        value: stun:stun.l.google.com:19302
-      - key: TURN_URL
-        value: ""
-      - key: TURN_SHARED_SECRET
-        value: ""
       - key: RATELIMIT_STORAGE_URI
         value: memory://
       - key: DEMO_CANDIDATE_PASSWORD
@@ -48,10 +40,10 @@ services:
     headers:
       - path: /*
         name: Content-Security-Policy
-        value: "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self' https://proofforge-api-31cq.onrender.com wss://proofforge-api-31cq.onrender.com https://*.onrender.com wss://*.onrender.com https://stun.l.google.com:19302 stun: turn: turns:; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
+        value: "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; media-src 'none'; connect-src 'self' https://proofforge-api-31cq.onrender.com https://*.onrender.com; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
       - path: /*
         name: Permissions-Policy
-        value: "camera=(self), microphone=(self), display-capture=(self), fullscreen=(self)"
+        value: "camera=(), microphone=(), display-capture=(), fullscreen=()"
       - path: /*
         name: X-Content-Type-Options
         value: nosniff
