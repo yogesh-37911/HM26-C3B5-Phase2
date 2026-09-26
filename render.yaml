@@ -29,11 +29,11 @@ services:
       - key: RATELIMIT_STORAGE_URI
         value: memory://
       - key: DEMO_CANDIDATE_PASSWORD
-        generateValue: true
+        value: DemoPassword123!
       - key: DEMO_REVIEWER_PASSWORD
-        generateValue: true
+        value: DemoPassword123!
       - key: DEMO_RECRUITER_PASSWORD
-        generateValue: true
+        value: DemoPassword123!
 
   - type: web
     name: proofforge-cyber

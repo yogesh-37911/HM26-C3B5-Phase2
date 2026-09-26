@@ -58,13 +58,14 @@ app.config.update(
 
 db.init_app(app)
 jwt = JWTManager(app)
-socketio = SocketIO(app, async_mode="threading", cors_allowed_origins=[os.getenv("FRONTEND_ORIGIN", "http://localhost:5173")], logger=False, engineio_logger=False)
+frontend_origins = [o.strip() for o in os.getenv("FRONTEND_ORIGIN", "http://localhost:5173").split(",") if o.strip()]
+socketio = SocketIO(app, async_mode="threading", cors_allowed_origins="*" if "*" in frontend_origins else frontend_origins, logger=False, engineio_logger=False)
 
 CORS(
     app,
     resources={
         r"/api/*": {
-            "origins": os.getenv("FRONTEND_ORIGIN", "http://localhost:5173")
+            "origins": "*" if "*" in frontend_origins else frontend_origins
         }
     },
 )
