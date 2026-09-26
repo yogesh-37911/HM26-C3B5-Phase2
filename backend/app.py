@@ -1817,6 +1817,21 @@ def socket_rtc_signal(data):
     socketio.emit("rtc_signal", payload, to=f"assessment:{assessment_id}", include_self=False)
 
 
+@app.post("/api/demo/reset")
+def reset_demo_candidate():
+    """Reset the primary demo candidate (Ananya Rao) data to a 100% clean initial state."""
+    ananya = User.query.filter_by(email="ananya.demo@example.invalid").first()
+    if ananya:
+        AssessmentResult.query.filter_by(candidate_id=ananya.id).delete()
+        Submission.query.filter_by(candidate_id=ananya.id).delete()
+        old_sessions = [s.id for s in SecureAssessment.query.filter_by(candidate_id=ananya.id).all()]
+        if old_sessions:
+            SecureAssessmentEvent.query.filter(SecureAssessmentEvent.assessment_id.in_(old_sessions)).delete(synchronize_session=False)
+            SecureAssessment.query.filter(SecureAssessment.id.in_(old_sessions)).delete(synchronize_session=False)
+        db.session.commit()
+    return jsonify(message="Primary demo candidate Ananya Rao reset to clean slate (0 assessments, 0 submissions).", status="clean")
+
+
 # ---------------------------------------------------------------------------
 # Error Handlers
 # ---------------------------------------------------------------------------
@@ -1883,19 +1898,7 @@ with app.app_context():
             db.session.add(AllowedAssessmentTarget(name=name, url=url, active=active, authorization_note=note))
         elif not existing.active:
             existing.active = True
-@app.post("/api/demo/reset")
-def reset_demo_candidate():
-    """Reset the primary demo candidate (Ananya Rao) data to a 100% clean initial state."""
-    ananya = User.query.filter_by(email="ananya.demo@example.invalid").first()
-    if ananya:
-        AssessmentResult.query.filter_by(candidate_id=ananya.id).delete()
-        Submission.query.filter_by(candidate_id=ananya.id).delete()
-        old_sessions = [s.id for s in SecureAssessment.query.filter_by(candidate_id=ananya.id).all()]
-        if old_sessions:
-            SecureAssessmentEvent.query.filter(SecureAssessmentEvent.assessment_id.in_(old_sessions)).delete(synchronize_session=False)
-            SecureAssessment.query.filter(SecureAssessment.id.in_(old_sessions)).delete(synchronize_session=False)
-        db.session.commit()
-    return jsonify(message="Primary demo candidate Ananya Rao reset to clean slate (0 assessments, 0 submissions).", status="clean")
+    db.session.commit()
 
 
 if __name__ == "__main__":
