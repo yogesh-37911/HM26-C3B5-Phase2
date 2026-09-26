@@ -3071,7 +3071,15 @@ export default function App() {
                     <Metric label="VERIFIED TALENTS" value={String(people.length)} trend="5 Specializations" icon={<ShieldCheck />} tone="mint" />
                     <Metric label="SAVED SHORTLIST" value={String(savedCandidates.length)} trend="Ready for screen" icon={<Award />} tone="lavender" />
                     <Metric label="ACTIVE INTERVIEWS" value={String(interviews.length)} trend={interviews.length === 1 ? '1 Scheduled' : `${interviews.length} Scheduled`} icon={<Clock3 />} tone="cream" />
-                    <Metric label="EVIDENCE MATCH" value="94%" trend="Proof Confidence" icon={<Fingerprint />} tone="peach" />
+                    <Metric
+                      label="EVIDENCE MATCH"
+                      value={`${recruiterCandidates.length
+                        ? Math.round(recruiterCandidates.reduce((total, candidate) => total + candidate.confidence, 0) / recruiterCandidates.length)
+                        : 0}%`}
+                      trend="Average proof confidence"
+                      icon={<Fingerprint />}
+                      tone="peach"
+                    />
                   </div>
 
                   <div className="rec-overview-grid">
