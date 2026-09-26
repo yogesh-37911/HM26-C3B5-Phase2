@@ -1,0 +1,16 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-proofforge}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-proofforge}
+    ports: ["5432:5432"]
+    volumes: ["proof-data:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U proofforge -d proofforge"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+volumes:
+  proof-data:

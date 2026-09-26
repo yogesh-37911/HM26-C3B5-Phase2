@@ -1,0 +1,14 @@
+node_modules/
+dist/
+Scripts/
+.venv/
+venv/
+Lib/
+var/
+.env
+__pycache__/
+*.py[cod]
+tsconfig.tsbuildinfo
+backend/instance/
+backend/*.db
+*.png
