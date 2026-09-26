@@ -660,7 +660,14 @@ def _secure_session(session_id):
 
 
 def _secure_access(session_row, user_id):
-    return bool(session_row and user_id in (session_row.candidate_id, session_row.reviewer_id))
+    if not session_row or not user_id:
+        return False
+    user = db.session.get(User, user_id)
+    if not user:
+        return False
+    if user.role == "reviewer":
+        return True
+    return user_id == session_row.candidate_id
 
 
 def _secure_event_row(row, candidate, event_type, severity=None, metadata=None):
@@ -1581,8 +1588,9 @@ def create_secure_assessment():
 @app.get("/api/secure-assessments")
 @role_required("candidate", "reviewer")
 def get_secure_assessments():
-    user_id = _get_current_user_id(); user = db.session.get(User, user_id)
-    query = SecureAssessment.query.filter_by(candidate_id=user_id) if user.role == "candidate" else SecureAssessment.query.filter_by(reviewer_id=user_id)
+    user_id = _get_current_user_id()
+    user = db.session.get(User, user_id)
+    query = SecureAssessment.query.filter_by(candidate_id=user_id) if user.role == "candidate" else SecureAssessment.query
     rows = query.order_by(SecureAssessment.created_at.desc()).limit(50).all()
     return jsonify(sessions=[_secure_payload(row) for row in rows])
 
@@ -1733,6 +1741,7 @@ def socket_join_reviewer():
     user = db.session.get(User, user_id) if user_id else None
     if not user or user.role != "reviewer": return {"error": "Forbidden"}
     join_room(f"reviewer:{user.id}")
+    join_room("reviewers")
     return {"joined": True}
 
 
@@ -1748,6 +1757,15 @@ def socket_rtc_signal(data):
     if data["type"] == "ice" and not isinstance(signal.get("candidate"), str): return
     payload = {"assessment_id": row.id, "kind": data["kind"], "type": data["type"], "payload": signal}
     socketio.emit("rtc_signal", payload, to=f"assessment:{row.id}", include_self=False)
+
+
+@socketio.on("stream_frame")
+def socket_stream_frame(data):
+    from flask import session as flask_session
+    user_id = flask_session.get("user_id"); row = _secure_session((data or {}).get("assessment_id", ""))
+    if not _secure_access(row, user_id): return
+    socketio.emit("stream_frame", data, to=f"assessment:{row.id}", include_self=False)
+    socketio.emit("stream_frame", data, to="reviewers", include_self=False)
 
 
 # ---------------------------------------------------------------------------
