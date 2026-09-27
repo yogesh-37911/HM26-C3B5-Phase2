@@ -85,6 +85,8 @@ See [ai.md](ai.md) for full disclosure. AI (Claude/Gemini) was used during devel
 The one-page trade-off analysis is in [docs/decision-log.md](docs/decision-log.md) and [output/pdf/HM26-C3B5_decision-log.pdf](output/pdf/HM26-C3B5_decision-log.pdf). It compares deterministic API scoring and human review with an automated LLM grader, states the review-latency and integration costs we accept, and estimates scale from the actual four-section result model: 50,000 candidates imply 200,000 section submissions, or about 167 requests/second averaged across 20 minutes. This is an estimate, not a load-test result.
 
 The 10-slide reviewer presentation is [output/pdf/HM26-C3B5_presentation.pdf](output/pdf/HM26-C3B5_presentation.pdf). It marks missing product captures and team member/college details as placeholders; add those before final submission. See [resource.md](resource.md) for submission links.
+
+The editable PowerPoint source is [output/pptx/HM26-C3B5_presentation.pptx](output/pptx/HM26-C3B5_presentation.pptx).
 ## 7. Setup & Run
 
 ### Quick Start (Local Development)

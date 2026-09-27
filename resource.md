@@ -16,12 +16,14 @@ Central landing file for reviewers. Fill in or update external hash placeholders
 - **Decision log PDF:** [HM26-C3B5_decision-log.pdf](output/pdf/HM26-C3B5_decision-log.pdf)
 - **Decision log Markdown:** [docs/decision-log.md](docs/decision-log.md)
 - **Presentation PDF:** [HM26-C3B5_presentation.pdf](output/pdf/HM26-C3B5_presentation.pdf)
+- **Editable PowerPoint:** [HM26-C3B5_presentation.pptx](output/pptx/HM26-C3B5_presentation.pptx)
 
-SHA-256 checksums for the committed PDFs:
+SHA-256 checksums for the committed deliverables:
 
 ```text
 presentation.pdf: 9F6287A3BA64A1B0D041926D382AA419640AC5D554E22DE28844D61E54910E69
 decision-log.pdf: D463E7BBDBE1B6DAD7072F9855A75A3B6276C624AC07D456DE598412B549C052
+presentation.pptx: 9E7EC3074BC97F08F76095C27394D59E73FEE9D4E2E774790554089AA31D9A40
 ```
 
 ## Documentation
@@ -59,4 +61,5 @@ SHA-256 hashes of the current deliverables:
 ```text
 presentation.pdf: 9F6287A3BA64A1B0D041926D382AA419640AC5D554E22DE28844D61E54910E69
 decision-log.pdf: D463E7BBDBE1B6DAD7072F9855A75A3B6276C624AC07D456DE598412B549C052
+presentation.pptx: 9E7EC3074BC97F08F76095C27394D59E73FEE9D4E2E774790554089AA31D9A40
 ```
