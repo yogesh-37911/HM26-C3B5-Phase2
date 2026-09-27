@@ -311,14 +311,184 @@ const PAGE_ICON_MAP: Record<string, React.ElementType> = {
   'Saved Candidates': BookmarkCheck,
 };
 
-function downloadDocumentFile(fileName: string, fileData: string) {
-  if (!fileData) return;
-  const link = document.createElement('a');
-  link.href = fileData;
-  link.download = fileName;
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
+function safeDataUrlToBlob(dataUrl: string, fallbackMime = 'application/pdf'): Blob {
+  try {
+    if (dataUrl.startsWith('data:')) {
+      const parts = dataUrl.split(',');
+      const mimeMatch = parts[0].match(/:(.*?);/);
+      const mime = mimeMatch ? mimeMatch[1] : fallbackMime;
+      const base64Data = parts[1] || '';
+      const byteCharacters = atob(base64Data);
+      const byteNumbers = new Uint8Array(byteCharacters.length);
+      for (let i = 0; i < byteCharacters.length; i++) {
+        byteNumbers[i] = byteCharacters.charCodeAt(i);
+      }
+      return new Blob([byteNumbers], { type: mime });
+    }
+  } catch (err) {
+    console.warn('Failed to parse data URL as binary:', err);
+  }
+  return new Blob([dataUrl], { type: 'text/plain' });
+}
+
+function generateFallbackDocumentHtml(doc: CandidateDocItem): string {
+  const sevColor = doc.severity === 'Critical' ? '#c0392b' : doc.severity === 'High' ? '#d35400' : doc.severity === 'Medium' ? '#f39c12' : '#27ae60';
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>${doc.title || 'Security Assessment Document'}</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; margin: 0; padding: 40px; color: #1c2b1a; background: #fafcfa; line-height: 1.6; }
+    .doc-page { max-width: 820px; margin: 0 auto; background: #fff; padding: 44px 50px; border-radius: 8px; box-shadow: 0 4px 20px rgba(0,0,0,0.06); border: 1px solid #e1e9df; }
+    .doc-header { border-bottom: 2px solid #234c20; padding-bottom: 20px; margin-bottom: 28px; display: flex; justify-content: space-between; align-items: flex-start; gap: 20px; }
+    .doc-brand { font-size: 11px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; color: #2e6029; margin-bottom: 6px; }
+    h1 { margin: 0 0 8px; font-size: 24px; color: #152d13; }
+    .meta-line { font-size: 13px; color: #586955; margin-top: 3px; }
+    .severity-tag { display: inline-block; padding: 6px 14px; border-radius: 6px; font-weight: 800; font-size: 12px; letter-spacing: 0.5px; text-transform: uppercase; background: ${sevColor}15; color: ${sevColor}; border: 1px solid ${sevColor}40; }
+    .section { margin-bottom: 24px; }
+    h3 { font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.8px; color: #284c25; border-bottom: 1px solid #e5ede3; padding-bottom: 6px; margin: 0 0 12px; }
+    p { margin: 0 0 10px; font-size: 13.5px; color: #2a3a28; }
+    pre { background: #f3f7f1; border: 1px solid #d8e5d6; border-radius: 6px; padding: 14px; font-size: 12px; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; overflow-x: auto; white-space: pre-wrap; word-break: break-all; color: #1e351c; }
+    .badge-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin: 16px 0; }
+    .badge-card { background: #f7faf6; border: 1px solid #e2ece0; padding: 10px 14px; border-radius: 6px; }
+    .badge-card span { font-size: 10.5px; color: #728470; text-transform: uppercase; font-family: monospace; display: block; }
+    .badge-card strong { font-size: 13px; color: #223420; }
+    .footer { margin-top: 40px; padding-top: 16px; border-top: 1px solid #e2ede0; font-size: 11px; color: #7a8e77; display: flex; justify-content: space-between; }
+  </style>
+</head>
+<body>
+  <div class="doc-page">
+    <div class="doc-header">
+      <div>
+        <div class="doc-brand">PROOFFORGE CYBERSECURITY · CANDIDATE CAPABILITY AUDIT</div>
+        <h1>${doc.title || 'Security Vulnerability Report'}</h1>
+        <div class="meta-line">Author: <strong>${doc.candidateName}</strong> &lt;${doc.candidateEmail || 'candidate@proofforge.internal'}&gt;</div>
+        <div class="meta-line">Target Scope: <strong>${doc.lab}</strong> · Uploaded: ${doc.submittedAt || 'Recent'}</div>
+      </div>
+      <div style="text-align: right;">
+        <span class="severity-tag">${doc.severity || 'High'} Severity</span>
+        <div style="margin-top: 8px; font-size: 11.5px; color: #647561; font-family: monospace;">STATUS: ${doc.status?.toUpperCase() || 'PENDING'}</div>
+      </div>
+    </div>
+
+    <div class="badge-grid">
+      <div class="badge-card">
+        <span>Target Component</span>
+        <strong>${doc.component || 'Application Layer'}</strong>
+      </div>
+      <div class="badge-card">
+        <span>Category</span>
+        <strong>${doc.category || 'Security Report'}</strong>
+      </div>
+      <div class="badge-card">
+        <span>Reviewer Score</span>
+        <strong>${doc.score !== undefined ? `${doc.score} / 100` : 'Pending Rubric'}</strong>
+      </div>
+    </div>
+
+    <div class="section">
+      <h3>Executive Summary &amp; Scope</h3>
+      <p>${doc.description || 'Candidate provided sanitized technical documentation and vulnerability reproduction steps.'}</p>
+    </div>
+
+    ${doc.evidence ? `
+    <div class="section">
+      <h3>HTTP Request / Response &amp; Sanitized Evidence</h3>
+      <pre>${doc.evidence}</pre>
+    </div>` : ''}
+
+    ${doc.reproduction ? `
+    <div class="section">
+      <h3>Reproduction Steps</h3>
+      <pre>${doc.reproduction}</pre>
+    </div>` : ''}
+
+    ${doc.impact ? `
+    <div class="section">
+      <h3>Impact &amp; Threat Modeling</h3>
+      <p>${doc.impact}</p>
+    </div>` : ''}
+
+    ${doc.recommendation ? `
+    <div class="section">
+      <h3>Defensive Remediation Architecture</h3>
+      <p>${doc.recommendation}</p>
+    </div>` : ''}
+
+    ${doc.reviewerFeedback ? `
+    <div class="section" style="background: #f4f8f2; border: 1px solid #d4e5d1; border-radius: 8px; padding: 16px; margin-top: 24px;">
+      <h3 style="border: none; padding: 0; margin-bottom: 6px; color: #1d401a;">Certified Reviewer Assessment</h3>
+      <p style="margin: 0 0 6px;"><strong>Evaluator:</strong> ${doc.reviewedBy || 'Samira Khan'} · <strong>Score:</strong> ${doc.score ?? 88} / 100 (${doc.status?.toUpperCase()})</p>
+      <p style="margin: 0; font-size: 13px; color: #355032;">${doc.reviewerFeedback}</p>
+    </div>` : ''}
+
+    <div class="footer">
+      <span>ProofForge Deterministic Security Verification</span>
+      <span>Doc Ref: ${doc.id} · File: ${doc.fileName || 'report.pdf'}</span>
+    </div>
+  </div>
+</body>
+</html>`;
+}
+
+async function resolveDocumentContent(
+  doc: CandidateDocItem,
+  token?: string
+): Promise<{ blob: Blob; blobUrl: string; fileName: string; isPdf: boolean; isHtml: boolean }> {
+  let fileData = doc.fileData;
+  const fileName = doc.fileName || `${(doc.title || 'Security_Report').replace(/[^a-zA-Z0-9_-]/g, '_')}.pdf`;
+  const isPdf = fileName.toLowerCase().endsWith('.pdf') || doc.fileType === 'pdf';
+
+  if (!fileData && doc.id && !isNaN(Number(doc.id)) && token) {
+    try {
+      const resp = await fetch(`${API_BASE}/api/documents/${doc.id}/content`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (resp.ok) {
+        const data = await resp.json();
+        if (data.file_data) {
+          fileData = data.file_data;
+          doc.fileData = fileData;
+        }
+      }
+    } catch (e) {
+      console.warn('Document server fetch fallback:', e);
+    }
+  }
+
+  if (fileData && fileData.trim().length > 0) {
+    if (fileData.startsWith('data:')) {
+      const blob = safeDataUrlToBlob(fileData, isPdf ? 'application/pdf' : 'text/html');
+      return {
+        blob,
+        blobUrl: URL.createObjectURL(blob),
+        fileName,
+        isPdf: blob.type === 'application/pdf',
+        isHtml: blob.type === 'text/html'
+      };
+    } else {
+      const mime = isPdf ? 'application/pdf' : 'text/html';
+      const blob = new Blob([fileData], { type: mime });
+      return {
+        blob,
+        blobUrl: URL.createObjectURL(blob),
+        fileName,
+        isPdf,
+        isHtml: !isPdf
+      };
+    }
+  }
+
+  const htmlContent = generateFallbackDocumentHtml(doc);
+  const blob = new Blob([htmlContent], { type: 'text/html' });
+  return {
+    blob,
+    blobUrl: URL.createObjectURL(blob),
+    fileName: fileName.replace(/\.pdf$/i, '.html'),
+    isPdf: false,
+    isHtml: true
+  };
 }
 
 const INITIAL_INTERVIEWS: {
@@ -385,6 +555,16 @@ export default function App() {
   const [docReviewFeedback, setDocReviewFeedback] = useState<string>(
     'Comprehensive methodology, clear reproduction steps, and sound remediation guidance.'
   );
+
+  // Reviewer & Candidate Document Viewer Preview State
+  const [viewingDocPreview, setViewingDocPreview] = useState<{
+    doc: CandidateDocItem;
+    blob?: Blob;
+    blobUrl: string;
+    fileName: string;
+    isPdf: boolean;
+    isHtml: boolean;
+  } | null>(null);
 
   // Dedicated State for Report Upload (Word / PDF) in Reports Section
   const [reportForm, setReportForm] = useState({
@@ -639,6 +819,43 @@ export default function App() {
 
     setModal('');
     notify(`Document evaluation saved (${docReviewScore}/100) — status: ${updatedStatus.toUpperCase()}`);
+  };
+
+  const handleDownloadDoc = async (doc: CandidateDocItem) => {
+    try {
+      notify(`Preparing ${doc.fileName || doc.title || 'document'} for download...`);
+      const { blob, fileName } = await resolveDocumentContent(doc, auth?.token);
+      const downloadUrl = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = downloadUrl;
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      setTimeout(() => URL.revokeObjectURL(downloadUrl), 30000);
+      notify(`Downloaded: ${fileName}`);
+    } catch (err) {
+      notify(`Download error: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  };
+
+  const handleViewDoc = async (doc: CandidateDocItem) => {
+    try {
+      notify(`Opening ${doc.fileName || doc.title || 'document'} in viewer...`);
+      const res = await resolveDocumentContent(doc, auth?.token);
+      setViewingDocPreview({
+        doc,
+        blob: res.blob,
+        blobUrl: res.blobUrl,
+        fileName: res.fileName,
+        isPdf: res.isPdf,
+        isHtml: res.isHtml,
+      });
+      setModalSize('fullscreen');
+      setModal('view-document');
+    } catch (err) {
+      notify(`Could not open document: ${err instanceof Error ? err.message : String(err)}`);
+    }
   };
   const [minCapability, setMinCapability] = useState(80);
   const [minConfidence, setMinConfidence] = useState(80);
@@ -1162,12 +1379,14 @@ export default function App() {
           severity: CandidateDocItem['severity']; doc_type?: CandidateDocItem['fileType']; file_name?: string;
           file_size?: string; description?: string; status: CandidateDocItem['status']; reviewer_score?: number;
           reviewer_feedback?: string; reviewed_by?: string; created_at?: string;
+          file_data?: string;
         }) => ({
           id: String(doc.id), candidateName: doc.candidate_name || 'Candidate', candidateEmail: doc.candidate_email || '',
           title: doc.title, lab: doc.lab || 'Security Assessment', severity: doc.severity || 'Informational',
           category: 'Candidate Report', component: 'Submitted assessment report', description: doc.description || '',
           evidence: 'Evidence is available in the submitted report.', reproduction: '', impact: '', recommendation: '',
           fileName: doc.file_name, fileSize: doc.file_size, fileType: doc.doc_type,
+          fileData: doc.file_data,
           status: doc.status, score: doc.reviewer_score, submittedAt: doc.created_at || '',
           reviewerFeedback: doc.reviewer_feedback, reviewedBy: doc.reviewed_by,
         }));
@@ -2043,9 +2262,56 @@ export default function App() {
                             <button
                               type="button"
                               className="button secondary small-button"
-                              onClick={() => downloadDocumentFile(reportForm.fileName, reportForm.fileData)}
+                              onClick={() => void handleViewDoc({
+                                id: 'preview',
+                                candidateName: auth?.name || 'Candidate',
+                                candidateEmail: auth?.email || '',
+                                title: reportForm.title.trim() || reportForm.fileName || 'Assessment Report',
+                                lab: 'Security Assessment',
+                                severity: 'High',
+                                category: 'Report Preview',
+                                component: 'Report Submission',
+                                description: reportForm.notes,
+                                evidence: '',
+                                reproduction: '',
+                                impact: '',
+                                recommendation: '',
+                                fileName: reportForm.fileName,
+                                fileSize: reportForm.fileSize,
+                                fileType: reportForm.fileType,
+                                fileData: reportForm.fileData,
+                                status: 'pending',
+                                submittedAt: 'Just now',
+                              })}
                             >
-                              <Download size={12} /> Preview
+                              <Eye size={12} /> Preview
+                            </button>
+                            <button
+                              type="button"
+                              className="button secondary small-button"
+                              onClick={() => void handleDownloadDoc({
+                                id: 'preview',
+                                candidateName: auth?.name || 'Candidate',
+                                candidateEmail: auth?.email || '',
+                                title: reportForm.title.trim() || reportForm.fileName || 'Assessment Report',
+                                lab: 'Security Assessment',
+                                severity: 'High',
+                                category: 'Report Preview',
+                                component: 'Report Submission',
+                                description: reportForm.notes,
+                                evidence: '',
+                                reproduction: '',
+                                impact: '',
+                                recommendation: '',
+                                fileName: reportForm.fileName,
+                                fileSize: reportForm.fileSize,
+                                fileType: reportForm.fileType,
+                                fileData: reportForm.fileData,
+                                status: 'pending',
+                                submittedAt: 'Just now',
+                              })}
+                            >
+                              <Download size={12} /> Download
                             </button>
                             <button
                               type="button"
@@ -2164,13 +2430,26 @@ export default function App() {
                                     <span style={{ fontSize: 11, fontWeight: 600, color: '#2c3c2a' }}>{item.fileName}</span>
                                     <span style={{ fontSize: 10, color: '#7a8677' }}>({item.fileSize})</span>
                                   </div>
-                                  <button
-                                    className="button secondary small-button"
-                                    style={{ padding: '3px 8px', fontSize: 10 }}
-                                    onClick={() => downloadDocumentFile(item.fileName!, item.fileData || '')}
-                                  >
-                                    <Download size={11} /> Download / View File
-                                  </button>
+                                  <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                                    <button
+                                      type="button"
+                                      className="button secondary small-button"
+                                      style={{ padding: '3px 8px', fontSize: 10 }}
+                                      onClick={() => void handleViewDoc(item)}
+                                      title="Preview document in viewer"
+                                    >
+                                      <Eye size={11} /> View
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className="button secondary small-button"
+                                      style={{ padding: '3px 8px', fontSize: 10 }}
+                                      onClick={() => void handleDownloadDoc(item)}
+                                      title="Download document file"
+                                    >
+                                      <Download size={11} /> Download
+                                    </button>
+                                  </div>
                                 </div>
                               )}
 
@@ -2563,11 +2842,20 @@ export default function App() {
                                 </div>
                                 <div className="doc-review-actions">
                                   <button
+                                    type="button"
                                     className="button secondary small-button"
-                                    onClick={() => downloadDocumentFile(doc.fileName!, doc.fileData || '')}
-                                    title="View or download document"
+                                    onClick={() => void handleViewDoc(doc)}
+                                    title="Preview candidate document in viewer"
                                   >
-                                    <Download size={12} /> Download / View
+                                    <Eye size={12} /> View
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="button secondary small-button"
+                                    onClick={() => void handleDownloadDoc(doc)}
+                                    title="Download document file to device"
+                                  >
+                                    <Download size={12} /> Download
                                   </button>
                                   <button
                                     className="button primary small-button"
@@ -3662,6 +3950,8 @@ export default function App() {
                     ? 'INTERVIEW INVITATION'
                     : modal === 'topic'
                     ? 'FIELD NOTES & REVISION'
+                    : modal === 'view-document'
+                    ? 'SECURITY DOCUMENT & REPORT VIEWER'
                     : 'PROOF RECORD'}
                 </span>
                 <h2>
@@ -3695,6 +3985,8 @@ export default function App() {
                     ? 'Record Lab Security Finding'
                     : modal === 'review-document'
                     ? 'Review Candidate Document & Security Report'
+                    : modal === 'view-document'
+                    ? (viewingDocPreview?.doc.title || 'Security Document Preview')
                     : lab}
                 </h2>
               </div>
@@ -4251,12 +4543,24 @@ export default function App() {
                         <span style={{ fontSize: 10, color: '#7a8677' }}>{reviewingDoc.fileSize} · Ready for review</span>
                       </div>
                     </div>
-                    <button
-                      className="button secondary small-button"
-                      onClick={() => downloadDocumentFile(reviewingDoc.fileName!, reviewingDoc.fileData || '')}
-                    >
-                      <Download size={12} /> Download / View Document
-                    </button>
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                      <button
+                        type="button"
+                        className="button secondary small-button"
+                        onClick={() => void handleViewDoc(reviewingDoc)}
+                        title="Preview candidate document in viewer"
+                      >
+                        <Eye size={12} /> View Document
+                      </button>
+                      <button
+                        type="button"
+                        className="button secondary small-button"
+                        onClick={() => void handleDownloadDoc(reviewingDoc)}
+                        title="Download document file to device"
+                      >
+                        <Download size={12} /> Download
+                      </button>
+                    </div>
                   </div>
                 )}
 
@@ -4329,6 +4633,95 @@ export default function App() {
                   </button>
                 </div>
               </>
+            ) : modal === 'view-document' && viewingDocPreview ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                <div className="review-summary" style={{ marginBottom: 4, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                    <div className={`avatar ${viewingDocPreview.doc.candidateName.includes('Ananya') ? 'peach' : 'blue'}`}>
+                      {viewingDocPreview.doc.candidateName.split(' ').map((x) => x[0]).join('')}
+                    </div>
+                    <div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <strong style={{ fontSize: 13 }}>{viewingDocPreview.doc.candidateName}</strong>
+                        <span className="demo-chip" style={{ fontSize: 9 }}>Candidate</span>
+                        <span className={`severity ${viewingDocPreview.doc.severity.toLowerCase()}`}>
+                          {viewingDocPreview.doc.severity}
+                        </span>
+                      </div>
+                      <p style={{ margin: '2px 0 0', fontSize: 11, color: '#687564' }}>
+                        {viewingDocPreview.doc.lab} · {viewingDocPreview.fileName} ({viewingDocPreview.doc.fileSize || 'Standard Document'}) · Uploaded {viewingDocPreview.doc.submittedAt || 'Recently'}
+                      </p>
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                    <button
+                      type="button"
+                      className="button secondary small-button"
+                      onClick={() => {
+                        if (viewingDocPreview.blobUrl) {
+                          window.open(viewingDocPreview.blobUrl, '_blank', 'noopener,noreferrer');
+                        }
+                      }}
+                      title="Open in new browser window or tab"
+                    >
+                      <ExternalLink size={12} /> Open in New Tab
+                    </button>
+                    <button
+                      type="button"
+                      className="button primary small-button"
+                      onClick={() => void handleDownloadDoc(viewingDocPreview.doc)}
+                      title="Download document file to disk"
+                    >
+                      <Download size={12} /> Download File
+                    </button>
+                  </div>
+                </div>
+
+                <div style={{
+                  border: '1px solid #dbe2d8',
+                  borderRadius: 8,
+                  overflow: 'hidden',
+                  background: '#fff',
+                  height: 580,
+                  display: 'flex',
+                  flexDirection: 'column'
+                }}>
+                  {viewingDocPreview.blobUrl ? (
+                    <iframe
+                      src={viewingDocPreview.blobUrl}
+                      title={viewingDocPreview.doc.title}
+                      style={{ width: '100%', height: '100%', border: 'none', background: '#fff' }}
+                    />
+                  ) : (
+                    <div style={{ padding: 30, textAlign: 'center', color: '#666' }}>
+                      Unable to render document preview directly. Please click Download above.
+                    </div>
+                  )}
+                </div>
+
+                <div className="modal-actions" style={{ justifyContent: 'space-between', alignItems: 'center', marginTop: 8 }}>
+                  {role === 'Reviewer' ? (
+                    <button
+                      type="button"
+                      className="button primary"
+                      onClick={() => {
+                        setReviewingDoc(viewingDocPreview.doc);
+                        setDocReviewScore(viewingDocPreview.doc.score ?? 88);
+                        setDocReviewDecision(viewingDocPreview.doc.status === 'verified' ? 'verified' : 'verified');
+                        setDocReviewFeedback(viewingDocPreview.doc.reviewerFeedback || 'Comprehensive methodology, clear reproduction steps, and sound remediation guidance.');
+                        setModal('review-document');
+                      }}
+                    >
+                      <Sliders size={13} /> Review &amp; Score This Document
+                    </button>
+                  ) : (
+                    <span />
+                  )}
+                  <button type="button" className="button secondary" onClick={() => setModal('')}>
+                    Close
+                  </button>
+                </div>
+              </div>
             ) : modal === 'review-assessment' ? (
               (() => {
                 const baseScore = 36; // 36/40

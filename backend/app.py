@@ -1547,6 +1547,7 @@ def list_documents():
                 "doc_type": doc.doc_type,
                 "file_name": doc.file_name,
                 "file_size": doc.file_size,
+                "file_data": doc.file_data,
                 "description": doc.description,
                 "status": doc.status,
                 "reviewer_score": doc.reviewer_score,
