@@ -82,22 +82,9 @@ See [ai.md](ai.md) for full disclosure. AI (Claude/Gemini) was used during devel
 
 ## 6. Decision Log (Summary)
 
-The complete 1-page Decision Log is detailed in [docs/decision-log.md](docs/decision-log.md) and compiled to [output/pdf/HM26-C3B5_decision-log.pdf](output/pdf/HM26-C3B5_decision-log.pdf). Below is the mandatory executive summary:
+The one-page trade-off analysis is in [docs/decision-log.md](docs/decision-log.md) and [output/pdf/HM26-C3B5_decision-log.pdf](output/pdf/HM26-C3B5_decision-log.pdf). It compares deterministic API scoring and human review with an automated LLM grader, states the review-latency and integration costs we accept, and estimates scale from the actual four-section result model: 50,000 candidates imply 200,000 section submissions, or about 167 requests/second averaged across 20 minutes. This is an estimate, not a load-test result.
 
-- **Q1. What approach did we take, and what did we reject?**  
-  *Chosen Technical Approach:* A **Deterministic Structured Evidence Pipeline with Human Reviewer Rubric and Decoupled Confidence Scoring** (Inputs: candidate HTTP evidence payloads + 40-question answers → Logic: SHA-256 hash collision checks + 7-dimensional reviewer rubric + 9-domain weighted capability matrix → Output: Verified Security DNA & sanitized recruiter proof).  
-  *Rejected Alternative:* A **Fully Automated LLM Vulnerability Grader and Code Evaluator**. While attractive for instant 24/7 automated grading and zero human overhead, it was rejected due to vulnerability to prompt injection, non-deterministic scoring variance, and high hallucination risk on novel exploits.
-- **Q2. Why did we reject it? What was the trade-off?**  
-  We evaluated both across 4 dimensions: (1) *Spam & Cheat Resistance* (LLMs fail against adversarial payloads; human defense review succeeds), (2) *Legal & Technical Defensibility* (recruiters require auditable proof, not black-box AI scores), (3) *Build Complexity in 72h* (deterministic Python logic is 100% testable and predictable), and (4) *Cost*.  
-  *Accepted Trade-off:* We knowingly accepted that human verification creates an **asynchronous queue latency** (candidates wait for reviewer audit rather than receiving instant validation). This trade-off was deliberate to protect recruiter trust.
-- **Q3. What breaks at scale?**  
-  During cohort-wide testing surges (e.g., thousands of simultaneous campus assessments), the first failure point is **database write contention and table scans on serialized assessment scoring**. 50,000 candidates submitting 40 answers concurrently produces 2,000,000 row writes and unindexed SHA-256 evidence scans, choking the connection pool.  
-  *Immediate Architectural Fix:* Move assessment scoring to an asynchronous Redis/Celery task queue, shard submissions by `(candidate_id, section_id)`, and implement a Redis Bloom filter for $O(1)$ duplicate evidence collision pre-filtering before relational persistence.
-
-See [resource.md](resource.md) for complete submission links and external verification hashes.
-
----
-
+The 10-slide reviewer presentation is [output/pdf/HM26-C3B5_presentation.pdf](output/pdf/HM26-C3B5_presentation.pdf). It marks missing product captures and team member/college details as placeholders; add those before final submission. See [resource.md](resource.md) for submission links.
 ## 7. Setup & Run
 
 ### Quick Start (Local Development)

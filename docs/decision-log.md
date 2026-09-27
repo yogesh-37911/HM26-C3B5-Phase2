@@ -1,40 +1,25 @@
-# Engineering Decision Log — FREQUENCY (Verifiable Proof-of-Work Engineering Discovery & Hiring Platform)
+# Engineering Decision Log — FREQUENCY / ProofForge Cyber
 
-**Team ID:** `HM26-C3B5` | **Track:** Cybersecurity Talent & Evidence Pipeline | **Scope:** Phase 2 Submission
+**Team ID:** HM26-C3B5 · **Sub-problem:** Evidence-backed cybersecurity hiring
 
----
+## Q1. What approach did we take, and what did we reject?
 
-### Q1. What approach did we take, and what did we reject? 
+We built a proof pipeline in which candidate assessment answers and structured security findings enter the API; server-side scoring, evidence hashing and a human reviewer’s decision turn them into section scores and verified findings; recruiter routes expose sanitized proof for discovery. Assessment answer keys stay on the server. A finding remains pending until a reviewer verifies it, rejects it or requests changes. The recruiter-facing capability and confidence signals are derived from evidence; claimed tools do not establish skill. The current interface is partly a demonstration: several candidate and recruiter views use synthetic browser state, while the API persists assessment section scores, findings, reviewer decisions, defense answers, rubric values and invitations.
 
-We built an audited, deterministic evidence pipeline coupled with human reviewer authority and decoupled confidence scoring.  
-**Chosen Approach (Inputs → Logic → Output):**  
-Candidate raw HTTP lab payloads, drag-and-drop vulnerability reports, and timed 40-question answers $\rightarrow$ SHA-256 evidence collision hashing + 7-dimensional reviewer rubric scoring + server-side non-linear 9-domain DNA weighting $\rightarrow$ Ungameable candidate Security DNA, sanitized recruiter reproduction cards, and synchronized interview invitations.
+We seriously considered an automated LLM grader. It looked attractive because it could return feedback immediately and reduce reviewer queue time. We rejected it as the authority for hiring decisions: exploit evidence is adversarial input, and a generated score would be difficult to reproduce and defend. The implemented reviewer suggestion is deterministic demo content, not a runtime model.
 
-**Rejected Alternative:**  
-We seriously considered and prototyped an automated LLM-based vulnerability grading engine that would ingest candidate exploit submissions and generate instant capability scores via prompt engineering. This appeared highly attractive at first because it promised zero-touch scalability, instant feedback for candidates within seconds, and eliminated human reviewer scheduling bottlenecks during high-volume hackathon evaluations.
+## Q2. Why did we reject it? What was the trade-off?
 
----
+Across **trust**, **repeatability**, **build scope** and **latency**, human verification with deterministic API rules was the better fit. Reviewers can inspect reproduction steps and explain a decision; server-side answer keys and explicit ownership checks constrain basic tampering. The approach was feasible to implement without collecting labeled examples, hosting a model or designing prompt-injection defenses. A language model might summarize reports faster, but it can miss context or follow instructions embedded in hostile evidence. We therefore keep final verification and hiring decisions with people.
 
-### Q2. Why did we reject it? What was the trade-off? 
+We knowingly accept slower verification: candidates wait for a reviewer, and reviewer capacity becomes a bottleneck. We also accept an incomplete product boundary: role pages are not yet fully wired to authenticated API records, and synthetic UI state must not be mistaken for persisted candidate evidence. This costs immediacy and end-to-end consistency. The MVP favors explainable records and human accountability over instant but less defensible automated judgments.
 
-We rejected automated LLM evaluation across four critical engineering dimensions:
-1. **Adversarial & Prompt Injection Vulnerability:** Penetration testing payloads inherently contain hostile syntax (SQL quotes, script tags, serialized blobs). An LLM evaluator is fundamentally vulnerable to prompt injection inside proof payloads that manipulate the model into granting perfect scores.
-2. **Hallucination & Legal Defensibility:** LLMs frequently hallucinate CVSS severities or accept superficial curl commands as verified exploits. In professional hiring, an unverifiable score exposes recruiters to bad hires and candidates to unfair rejections.
-3. **Build Determinism in 72 Hours:** Fine-tuning and stabilizing prompt variance under hackathon time constraints was non-deterministic; our relational rubric and Python mathematical scoring engine delivered 100% reproducible, unit-testable scores.
-4. **Recruiter Trust:** Hiring managers explicitly stated they do not trust "AI-evaluated security talent." They demand human-verified reproduction steps.
+## Q3. What breaks at the scale of all of Mysuru?
 
-**The Trade-off We Accepted:**  
-We knowingly accepted an **asynchronous review queue delay**. Candidates cannot receive instantaneous verified status upon submission; they must wait for human auditor review and defense evaluation. We decided this friction was a necessary cost to maintain absolute integrity.
+Assume 50,000 candidates complete four assessment sections during a 20-minute placement window. The API stores one result per candidate per section, so that is **200,000 score submissions**, averaging about **167 requests per second** if evenly spread; a deadline rush would be higher. This is not two million question-result rows: each request scores ten answers and upserts one section result. Today scoring runs synchronously, then the audit helper commits separately. The Render blueprint also configures one Gunicorn worker and in-memory rate limiting. A burst can therefore exhaust request/DB capacity, while adding workers would make per-process rate limits inconsistent.
+
+Our first change would be a durable submission/outbox queue with idempotency on `(candidate_id, section)`, so requests can be accepted quickly and scoring/audit work drained at a controlled rate. We would move rate limits to shared Redis before horizontal scaling, then load-test peak bursts and tune worker and database capacity from measurements. This adds operational components and makes results briefly asynchronous; we accept that cost to protect the service during festival or campus-wide traffic.
 
 ---
 
-### Q3. What breaks at scale? 
-
-When scaled across all engineering colleges and organizations across Mysuru and regional hubs—simulating 50,000 active candidates and 1,000 reviewers during synchronized campus placement drives—the first failure point is **database write contention and table scans during synchronized assessment submissions**.
-
-Specifically, 50,000 candidates concurrently submitting 40-question assessments within a 20-minute deadline generates 2,000,000 row writes to `assessment_results` and triggers unindexed SHA-256 hash collision checks across millions of historical findings. Under default PostgreSQL pooling (100–200 connections), this causes transaction serialization deadlocks, connection pool starvation, and request timeouts exceeding 30 seconds.
-
-**Immediate Architectural Fix:**
-1. Decouple submission ingestion from synchronous scoring using an asynchronous message queue (Redis Streams / Celery workers) with batch insertion ($5,000$ items/batch).
-2. Implement an in-memory Redis Bloom Filter ($<15\text{ MB}$ RAM for 10 million hashes at $0.1\%$ false-positive rate) to achieve $O(1)$ duplicate evidence collision pre-filtering before relational database writes.
-3. Partition the `submissions` and `assessment_results` tables by `(candidate_id, section_id)` with B-tree indices on evidence hashes.
+**Word count:** approximately 470 words. Scale figures are estimates from the current four-section data model, not measured production capacity.

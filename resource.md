@@ -10,21 +10,19 @@ Central landing file for reviewers. Fill in or update external hash placeholders
 
 ## Links
 
-- **Live demo URL:** <https://proofforge-cyber.onrender.com/>
+- **Live demo URL:** <https://proofforge-cyber.onrender.com>
 - **GitHub repository URL:** <https://github.com/yogesh-37911/HM26-C3B5-Phase2.git>
-
-- **Demo video URL:** _Add before final submission._
-- **Demo video SHA-256:** _Add after uploading the final video._
-
-- **Coding walkthrough video URL:** _Add before final submission._
-- **Coding walkthrough SHA-256:** _Add after uploading the final video._
 
 - **Decision log PDF:** [HM26-C3B5_decision-log.pdf](output/pdf/HM26-C3B5_decision-log.pdf)
 - **Decision log Markdown:** [docs/decision-log.md](docs/decision-log.md)
-- **Decision log SHA-256:** `2956B4FA939583984C767E71A787B0E84172ADD839C87A79FDB9B35B329E6F68` (Generated PDF: `6944744CF7D6551F489DCB3BA248D59CC79DF6072AF23479561539960727E396`)
+- **Presentation PDF:** [HM26-C3B5_presentation.pdf](output/pdf/HM26-C3B5_presentation.pdf)
 
-- **Presentation PDF:** <https://drive.google.com/file/d/1M13pVLY9oMEygzCYxbzNvGmrcbHV-cc8/view?usp=drive_link>
-- **Presentation PDF SHA-256:** `2BF808A4551C94C2`
+SHA-256 checksums for the committed PDFs:
+
+```text
+presentation.pdf: 831586769FF2968397CE93E8DF0C05F316092CEA69D1BB20837E60A3FEEACBCE
+decision-log.pdf: DBF959FE21F88A394792F21BC28110CE9B95B703BB6F861007338E54DD945B79
+```
 
 ## Documentation
 
@@ -56,11 +54,9 @@ Summary: AI (Claude / Gemini) was used as a development assistant for frontend c
 
 ## Verification
 
-SHA-256 hashes of final external deliverables (update video hash values after upload):
+SHA-256 hashes of the current deliverables:
 
 ```text
-presentation.pdf:      2BF808A4551C94C2
-decision-log.pdf:      2956B4FA939583984C767E71A787B0E84172ADD839C87A79FDB9B35B329E6F68
-demo-video.mp4:        [Add SHA-256 hash after recording]
-walkthrough-video.mp4: [Add SHA-256 hash after recording]
+presentation.pdf: 831586769FF2968397CE93E8DF0C05F316092CEA69D1BB20837E60A3FEEACBCE
+decision-log.pdf: DBF959FE21F88A394792F21BC28110CE9B95B703BB6F861007338E54DD945B79
 ```
