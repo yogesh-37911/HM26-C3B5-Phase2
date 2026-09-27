@@ -25,6 +25,8 @@ Central landing file for reviewers. Fill in or update external hash placeholders
 - **Presentation PDF:** <https://drive.google.com/file/d/1U76BVCGh8fDrLA0uddLTtnnZr9C9bxNh/view?usp=sharing>
 - **Presentation PDF SHA-256:** `CA960F59B534EE34`
 
+- **Raw PPT File:** <https://docs.google.com/presentation/d/14rTGAafaaE7r47vAFyhDah693rNcx0I-/edit?usp=drive_link&ouid=117437564846053524532&rtpof=true&sd=true>
+
 ## Documentation
 
 | Document | Path |
