@@ -42,7 +42,6 @@ import {
   PlusCircle,
   RotateCcw,
   Search,
-  Settings,
   Shield,
   ShieldAlert,
   ShieldCheck,
@@ -1324,7 +1323,6 @@ export default function App() {
             <div><ShieldCheck size={15} /><span>SAFE BY DESIGN</span></div>
             <p>All testing stays inside authorized training environments.</p>
           </div>
-          <button className="nav-item" onClick={() => notify('Settings are up to date')}><Settings /><span>Settings</span></button>
           <button className="nav-item" onClick={() => void signOut()}><LogOut /><span>Sign out</span></button>
         </div>
       </aside>
