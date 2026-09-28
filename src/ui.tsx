@@ -288,6 +288,18 @@ export type CandidateDocItem = {
   submittedAt: string;
   reviewerFeedback?: string;
   reviewedBy?: string;
+  aiScore?: number;
+  aiSummary?: string;
+  aiStrengths?: string[];
+  aiWeaknesses?: string[];
+  aiRecommendations?: string[];
+  aiVerdict?: 'strong_pass' | 'pass' | 'needs_improvement' | 'fail' | string;
+  aiAnalyzedAt?: string;
+  aiMethodologyScore?: number;
+  aiEvidenceScore?: number;
+  aiImpactScore?: number;
+  aiRemediationScore?: number;
+  aiReportQualityScore?: number;
 };
 
 const PAGE_ICON_MAP: Record<string, React.ElementType> = {
@@ -566,6 +578,12 @@ export default function App() {
     isHtml: boolean;
   } | null>(null);
 
+  // DeepSeek AI Document Proofing & Auto-Scoring State
+  const [analyzingDocId, setAnalyzingDocId] = useState<string | null>(null);
+  const [isBatchAnalyzingAi, setIsBatchAnalyzingAi] = useState<boolean>(false);
+  const [aiDetailDoc, setAiDetailDoc] = useState<CandidateDocItem | null>(null);
+  const [docSortMode, setDocSortMode] = useState<'default' | 'aiScore' | 'pending' | 'verified'>('default');
+
   // Dedicated State for Report Upload (Word / PDF) in Reports Section
   const [reportForm, setReportForm] = useState({
     title: '',
@@ -690,7 +708,7 @@ export default function App() {
 
     if (auth?.token) {
       try {
-        await fetch(`${API_BASE}/api/documents`, {
+        const uploadResp = await fetch(`${API_BASE}/api/documents`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${auth.token}` },
           body: JSON.stringify({
@@ -703,6 +721,23 @@ export default function App() {
             description: newReport.description,
           }),
         });
+        if (uploadResp.ok) {
+          const uploadData = await uploadResp.json();
+          const syncedReport: CandidateDocItem = {
+            ...newReport,
+            id: String(uploadData.id),
+            aiScore: uploadData.ai_score,
+            aiSummary: uploadData.ai_summary,
+            aiVerdict: uploadData.ai_verdict,
+            aiMethodologyScore: uploadData.ai_methodology_score,
+            aiEvidenceScore: uploadData.ai_evidence_score,
+            aiImpactScore: uploadData.ai_impact_score,
+            aiRemediationScore: uploadData.ai_remediation_score,
+            aiReportQualityScore: uploadData.ai_report_quality_score,
+          };
+          setCandidateReports((prev) => [syncedReport, ...prev.filter((r) => r.id !== docId)]);
+          setReviewerDocuments((prev) => [syncedReport, ...prev.filter((r) => r.id !== docId)]);
+        }
       } catch (err) {
         console.warn('Document server sync:', err);
       }
@@ -856,6 +891,168 @@ export default function App() {
     } catch (err) {
       notify(`Could not open document: ${err instanceof Error ? err.message : String(err)}`);
     }
+  };
+
+  // Load documents helper function
+  const fetchDocuments = async () => {
+    if (!auth?.token || (auth.role !== 'Reviewer' && auth.role !== 'Candidate')) return;
+    try {
+      const response = await fetch(`${API_BASE}/api/documents`, {
+        headers: { Authorization: `Bearer ${auth.token}` },
+      });
+      if (!response.ok) return;
+      const data = await response.json();
+      const documents: CandidateDocItem[] = (data.documents ?? []).map((doc: any) => ({
+        id: String(doc.id),
+        candidateName: doc.candidate_name || 'Candidate',
+        candidateEmail: doc.candidate_email || '',
+        title: doc.title,
+        lab: doc.lab || 'Security Assessment',
+        severity: doc.severity || 'Informational',
+        category: 'Candidate Report',
+        component: 'Submitted assessment report',
+        description: doc.description || '',
+        evidence: 'Evidence is available in the submitted report.',
+        reproduction: '',
+        impact: '',
+        recommendation: '',
+        fileName: doc.file_name,
+        fileSize: doc.file_size,
+        fileType: doc.doc_type,
+        fileData: doc.file_data,
+        status: doc.status,
+        score: doc.reviewer_score,
+        submittedAt: doc.created_at || '',
+        reviewerFeedback: doc.reviewer_feedback,
+        reviewedBy: doc.reviewed_by,
+        aiScore: doc.ai_score,
+        aiSummary: doc.ai_summary,
+        aiStrengths: doc.ai_strengths,
+        aiWeaknesses: doc.ai_weaknesses,
+        aiRecommendations: doc.ai_recommendations,
+        aiVerdict: doc.ai_verdict,
+        aiAnalyzedAt: doc.ai_analyzed_at,
+        aiMethodologyScore: doc.ai_methodology_score,
+        aiEvidenceScore: doc.ai_evidence_score,
+        aiImpactScore: doc.ai_impact_score,
+        aiRemediationScore: doc.ai_remediation_score,
+        aiReportQualityScore: doc.ai_report_quality_score,
+      }));
+      if (auth.role === 'Reviewer') setReviewerDocuments(documents);
+      else setCandidateReports(documents);
+    } catch (e) {
+      console.warn('Failed to load documents:', e);
+    }
+  };
+
+  // Run AI analysis on single document
+  const handleAnalyzeDocWithAi = async (doc: CandidateDocItem) => {
+    if (!auth?.token) {
+      notify('Authentication required to run DeepSeek AI analysis.');
+      return;
+    }
+    const numericId = parseInt(doc.id, 10);
+    if (isNaN(numericId)) {
+      notify('Please wait for document synchronization before analyzing.');
+      return;
+    }
+
+    setAnalyzingDocId(doc.id);
+    notify(`Analyzing "${doc.title}" with DeepSeek AI...`);
+    try {
+      const resp = await fetch(`${API_BASE}/api/documents/${numericId}/ai-analyze`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${auth.token}`,
+        },
+      });
+      const data = await resp.json();
+      if (!resp.ok) {
+        throw new Error(data.error || 'AI analysis request failed.');
+      }
+
+      const updateDoc = (d: CandidateDocItem): CandidateDocItem =>
+        d.id === doc.id
+          ? {
+              ...d,
+              aiScore: data.ai_score,
+              aiSummary: data.ai_summary,
+              aiStrengths: data.ai_strengths,
+              aiWeaknesses: data.ai_weaknesses,
+              aiRecommendations: data.ai_recommendations,
+              aiVerdict: data.ai_verdict,
+              aiAnalyzedAt: data.ai_analyzed_at,
+              aiMethodologyScore: data.ai_methodology_score,
+              aiEvidenceScore: data.ai_evidence_score,
+              aiImpactScore: data.ai_impact_score,
+              aiRemediationScore: data.ai_remediation_score,
+              aiReportQualityScore: data.ai_report_quality_score,
+            }
+          : d;
+
+      setReviewerDocuments((prev) => prev.map(updateDoc));
+      setCandidateReports((prev) => prev.map(updateDoc));
+      if (reviewingDoc && reviewingDoc.id === doc.id) {
+        setReviewingDoc((prev) => (prev ? updateDoc(prev) : null));
+      }
+      notify(`DeepSeek AI Complete: Score ${data.ai_score}/100 (${(data.ai_verdict || 'PASS').replace('_', ' ').toUpperCase()})`);
+    } catch (err: any) {
+      notify(`AI Analysis Error: ${err.message}`);
+    } finally {
+      setAnalyzingDocId(null);
+    }
+  };
+
+  // Run batch AI analysis across all pending documents
+  const handleBatchAnalyzeAllAi = async () => {
+    if (!auth?.token) return;
+    setIsBatchAnalyzingAi(true);
+    notify('Running batch DeepSeek AI analysis on candidate documents...');
+    try {
+      const resp = await fetch(`${API_BASE}/api/documents/ai-analyze-all`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${auth.token}`,
+        },
+      });
+      const data = await resp.json();
+      if (!resp.ok) throw new Error(data.error || 'Batch AI analysis failed.');
+      await fetchDocuments();
+      notify(`DeepSeek AI batch complete: Analyzed and ranked ${data.analyzed} reports!`);
+    } catch (err: any) {
+      notify(`Batch AI error: ${err.message}`);
+    } finally {
+      setIsBatchAnalyzingAi(false);
+    }
+  };
+
+  // Auto-fill review form with AI evaluation
+  const handleApplyAiEvaluation = () => {
+    if (!reviewingDoc || reviewingDoc.aiScore === undefined) return;
+    setDocReviewScore(reviewingDoc.aiScore);
+    const decision =
+      reviewingDoc.aiVerdict === 'fail'
+        ? 'rejected'
+        : reviewingDoc.aiVerdict === 'needs_changes'
+        ? 'needs_changes'
+        : 'verified';
+    setDocReviewDecision(decision);
+
+    const feedbackLines = [
+      `[DeepSeek AI Evaluation - Score: ${reviewingDoc.aiScore}/100]`,
+      reviewingDoc.aiSummary || '',
+      '',
+      'Key Strengths:',
+      ...(reviewingDoc.aiStrengths || []).map((s) => `• ${s}`),
+      '',
+      'Recommendations & Areas for Hardening:',
+      ...(reviewingDoc.aiRecommendations || []).map((r) => `• ${r}`),
+    ].filter(Boolean);
+
+    setDocReviewFeedback(feedbackLines.join('\n'));
+    notify('Applied DeepSeek AI score, verdict, and structured feedback to review form!');
   };
   const [minCapability, setMinCapability] = useState(80);
   const [minConfidence, setMinConfidence] = useState(80);
@@ -2421,6 +2618,90 @@ export default function App() {
                                 </div>
                               </div>
 
+                              {/* AI Proofing Badge & Quick Action */}
+                              {item.aiScore !== undefined ? (
+                                <div
+                                  style={{
+                                    background: 'linear-gradient(135deg, #f7faf5 0%, #edf6eb 100%)',
+                                    border: '1px solid #c2dec0',
+                                    borderRadius: 6,
+                                    padding: '8px 12px',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'space-between',
+                                    gap: 10,
+                                    flexWrap: 'wrap',
+                                  }}
+                                >
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                    <span
+                                      style={{
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        gap: 4,
+                                        background: item.aiScore >= 80 ? '#275825' : (item.aiScore >= 65 ? '#99631d' : '#8f291c'),
+                                        color: '#fff',
+                                        padding: '2px 7px',
+                                        borderRadius: 4,
+                                        fontSize: 10,
+                                        fontWeight: 700,
+                                        fontFamily: 'DM Mono',
+                                      }}
+                                    >
+                                      <Sparkles size={10} /> AI PROOFED: {item.aiScore}/100
+                                    </span>
+                                    <span style={{ fontSize: 10.5, color: '#324a30' }}>
+                                      Verdict: <b>{(item.aiVerdict || 'pass').replace('_', ' ').toUpperCase()}</b>
+                                    </span>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    className="button secondary small-button"
+                                    style={{ padding: '2px 8px', fontSize: 10, borderColor: '#9ecc96' }}
+                                    onClick={() => {
+                                      setAiDetailDoc(item);
+                                      setModal('ai-proofing-detail');
+                                    }}
+                                  >
+                                    <Eye size={11} /> View AI Feedback &amp; Rubric
+                                  </button>
+                                </div>
+                              ) : (
+                                <div
+                                  style={{
+                                    background: '#fafbfa',
+                                    border: '1px dashed #d5dbd3',
+                                    borderRadius: 6,
+                                    padding: '6px 12px',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'space-between',
+                                    gap: 8,
+                                  }}
+                                >
+                                  <span style={{ fontSize: 10.5, color: '#687766' }}>
+                                    ✨ Run AI pre-scan to check your report&apos;s scoring and recommendations before reviewer check.
+                                  </span>
+                                  <button
+                                    type="button"
+                                    className="button secondary small-button"
+                                    style={{ padding: '2px 8px', fontSize: 10 }}
+                                    onClick={() => void handleAnalyzeDocWithAi(item)}
+                                    disabled={analyzingDocId === item.id}
+                                  >
+                                    {analyzingDocId === item.id ? (
+                                      <>
+                                        <RefreshCw size={10} className="spin" /> Scanning...
+                                      </>
+                                    ) : (
+                                      <>
+                                        <Sparkles size={10} /> AI Pre-Scan
+                                      </>
+                                    )}
+                                  </button>
+                                </div>
+                              )}
+
                               {item.fileName && (
                                 <div className="doc-attached-card" style={{ margin: '2px 0 0', padding: '7px 12px' }}>
                                   <div className="doc-attached-info">
@@ -2755,16 +3036,44 @@ export default function App() {
                     <div className="panel-head">
                       <div>
                         <h2>Candidate Uploaded Reports &amp; Documents</h2>
-                        <p>Audit candidate pentest reports, methodology documents (PDF &amp; Word .docx), and record certified reviewer scoring.</p>
+                        <p>Audit candidate pentest reports, run DeepSeek AI proofing &amp; scoring, and record certified reviewer evaluations.</p>
                       </div>
-                      <div className="top-actions" style={{ gap: 6 }}>
+                      <div className="top-actions" style={{ gap: 8, display: 'flex', alignItems: 'center' }}>
+                        <button
+                          type="button"
+                          className="button primary small-button"
+                          style={{
+                            background: 'linear-gradient(135deg, #1e4d25 0%, #2e6935 100%)',
+                            color: '#fff',
+                            boxShadow: '0 2px 8px rgba(30, 77, 37, 0.25)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 6,
+                            padding: '6px 14px',
+                            fontSize: 11.5,
+                            fontWeight: 600,
+                          }}
+                          onClick={() => void handleBatchAnalyzeAllAi()}
+                          disabled={isBatchAnalyzingAi}
+                          title="Run DeepSeek AI automated scoring and ranking on all pending reports"
+                        >
+                          {isBatchAnalyzingAi ? (
+                            <>
+                              <RefreshCw size={13} className="spin" /> DeepSeek Batch Scanning...
+                            </>
+                          ) : (
+                            <>
+                              <Sparkles size={13} /> ⚡ AI Batch Analyze All
+                            </>
+                          )}
+                        </button>
                         <span className="demo-chip" style={{ background: '#eaf4e6', color: '#255422', borderColor: '#c7dec0' }}>
-                          PDF &amp; WORD AUDIT
+                          DEEPSEEK AI ACTIVE
                         </span>
                       </div>
                     </div>
 
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10, margin: '8px 0 14px' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 10, margin: '8px 0 14px' }}>
                       <div className="result-card" style={{ padding: '10px 12px' }}>
                         <span style={{ fontSize: 9, color: '#7a8675', fontFamily: 'DM Mono' }}>TOTAL UPLOADED</span>
                         <strong style={{ fontSize: 20, color: '#1f2e1d', display: 'block', marginTop: 2 }}>{reviewerDocuments.length}</strong>
@@ -2776,10 +3085,62 @@ export default function App() {
                         </strong>
                       </div>
                       <div className="result-card" style={{ padding: '10px 12px' }}>
+                        <span style={{ fontSize: 9, color: '#2b6528', fontFamily: 'DM Mono' }}>AI PROOFED &amp; RANKED</span>
+                        <strong style={{ fontSize: 20, color: '#2b6528', display: 'block', marginTop: 2 }}>
+                          {reviewerDocuments.filter((d) => d.aiScore !== undefined).length} / {reviewerDocuments.length}
+                        </strong>
+                      </div>
+                      <div className="result-card" style={{ padding: '10px 12px' }}>
                         <span style={{ fontSize: 9, color: '#31632d', fontFamily: 'DM Mono' }}>VERIFIED &amp; CERTIFIED</span>
                         <strong style={{ fontSize: 20, color: '#31632d', display: 'block', marginTop: 2 }}>
                           {reviewerDocuments.filter((d) => d.status === 'verified').length}
                         </strong>
+                      </div>
+                    </div>
+
+                    {/* Filter & Rank Toolbar */}
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, margin: '2px 0 10px', flexWrap: 'wrap' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                        <span style={{ fontSize: 11, fontWeight: 600, color: '#566652' }}>Sort &amp; Filter:</span>
+                        <button
+                          type="button"
+                          className={`button ${docSortMode === 'default' ? 'primary' : 'secondary'} small-button`}
+                          onClick={() => setDocSortMode('default')}
+                          style={{ padding: '4px 10px', fontSize: 10.5 }}
+                        >
+                          Latest Uploads
+                        </button>
+                        <button
+                          type="button"
+                          className={`button ${docSortMode === 'aiScore' ? 'primary' : 'secondary'} small-button`}
+                          onClick={() => setDocSortMode('aiScore')}
+                          style={{
+                            padding: '4px 10px',
+                            fontSize: 10.5,
+                            background: docSortMode === 'aiScore' ? '#275825' : undefined,
+                            borderColor: '#82b57c',
+                            fontWeight: 600,
+                          }}
+                        >
+                          <Sparkles size={11} style={{ marginRight: 4, display: 'inline' }} />
+                          Rank by AI Score ({reviewerDocuments.filter(d => d.aiScore !== undefined).length})
+                        </button>
+                        <button
+                          type="button"
+                          className={`button ${docSortMode === 'pending' ? 'primary' : 'secondary'} small-button`}
+                          onClick={() => setDocSortMode('pending')}
+                          style={{ padding: '4px 10px', fontSize: 10.5 }}
+                        >
+                          Awaiting Review ({reviewerDocuments.filter(d => d.status === 'pending').length})
+                        </button>
+                        <button
+                          type="button"
+                          className={`button ${docSortMode === 'verified' ? 'primary' : 'secondary'} small-button`}
+                          onClick={() => setDocSortMode('verified')}
+                          style={{ padding: '4px 10px', fontSize: 10.5 }}
+                        >
+                          Certified ({reviewerDocuments.filter(d => d.status === 'verified').length})
+                        </button>
                       </div>
                     </div>
 
@@ -2793,7 +3154,19 @@ export default function App() {
                       </div>
                     ) : (
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                        {reviewerDocuments.map((doc) => (
+                        {reviewerDocuments
+                          .filter((d) => {
+                            if (docSortMode === 'pending') return d.status === 'pending';
+                            if (docSortMode === 'verified') return d.status === 'verified';
+                            return true;
+                          })
+                          .sort((a, b) => {
+                            if (docSortMode === 'aiScore') {
+                              return (b.aiScore ?? -1) - (a.aiScore ?? -1);
+                            }
+                            return 0;
+                          })
+                          .map((doc, idx) => (
                           <div key={doc.id} className="doc-review-card">
                             <div className="doc-review-head">
                               <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -2804,6 +3177,11 @@ export default function App() {
                                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                                     <strong style={{ fontSize: 13, color: '#202f1d' }}>{doc.candidateName}</strong>
                                     <span style={{ fontSize: 10, color: '#7a8677' }}>· {doc.lab}</span>
+                                    {docSortMode === 'aiScore' && doc.aiScore !== undefined && (
+                                      <span style={{ fontSize: 9.5, fontWeight: 700, color: '#275825', background: '#e3efe0', padding: '1px 6px', borderRadius: 4 }}>
+                                        RANK #{idx + 1}
+                                      </span>
+                                    )}
                                   </div>
                                   <h4 style={{ margin: '2px 0 0', fontSize: 12, fontWeight: 600, color: '#3a4a37' }}>
                                     {doc.title}
@@ -2827,6 +3205,117 @@ export default function App() {
                               <p style={{ margin: 0, fontSize: 11, color: '#566453', lineHeight: 1.5 }}>
                                 {doc.description}
                               </p>
+                            )}
+
+                            {/* DeepSeek AI Assessment Block */}
+                            {doc.aiScore !== undefined ? (
+                              <div
+                                style={{
+                                  background: 'linear-gradient(135deg, #f7faf5 0%, #edf6eb 100%)',
+                                  border: '1px solid #c2dec0',
+                                  borderRadius: 8,
+                                  padding: '10px 12px',
+                                  margin: '2px 0',
+                                  display: 'flex',
+                                  flexDirection: 'column',
+                                  gap: 6,
+                                }}
+                              >
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                    <span
+                                      style={{
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        gap: 4,
+                                        background: doc.aiScore >= 80 ? '#275825' : (doc.aiScore >= 65 ? '#99631d' : '#8f291c'),
+                                        color: '#fff',
+                                        padding: '3px 8px',
+                                        borderRadius: 6,
+                                        fontSize: 10.5,
+                                        fontWeight: 700,
+                                        fontFamily: 'DM Mono',
+                                      }}
+                                    >
+                                      <Sparkles size={11} /> AI SCORE: {doc.aiScore}/100
+                                    </span>
+                                    <span
+                                      style={{
+                                        fontSize: 10,
+                                        fontWeight: 700,
+                                        textTransform: 'uppercase',
+                                        color: doc.aiVerdict === 'strong_pass' ? '#1f5e23' : '#3d4d3a',
+                                        background: '#dcefd8',
+                                        padding: '2px 7px',
+                                        borderRadius: 4,
+                                      }}
+                                    >
+                                      {(doc.aiVerdict || 'PASS').replace('_', ' ')}
+                                    </span>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    className="button secondary small-button"
+                                    style={{ padding: '2px 8px', fontSize: 10, borderColor: '#a7cca0' }}
+                                    onClick={() => {
+                                      setAiDetailDoc(doc);
+                                      setModal('ai-proofing-detail');
+                                    }}
+                                  >
+                                    <Eye size={11} /> Inspect AI Proofing
+                                  </button>
+                                </div>
+
+                                {doc.aiSummary && (
+                                  <p style={{ margin: 0, fontSize: 11, color: '#334832', lineHeight: 1.45 }}>
+                                    <strong>AI Summary:</strong> {doc.aiSummary}
+                                  </p>
+                                )}
+
+                                <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', fontSize: 9.5, fontFamily: 'DM Mono', color: '#566652' }}>
+                                  {doc.aiMethodologyScore !== undefined && <span>Methodology: <b>{doc.aiMethodologyScore}%</b></span>}
+                                  {doc.aiEvidenceScore !== undefined && <span>Evidence: <b>{doc.aiEvidenceScore}%</b></span>}
+                                  {doc.aiImpactScore !== undefined && <span>Impact: <b>{doc.aiImpactScore}%</b></span>}
+                                  {doc.aiRemediationScore !== undefined && <span>Remediation: <b>{doc.aiRemediationScore}%</b></span>}
+                                  {doc.aiReportQualityScore !== undefined && <span>Quality: <b>{doc.aiReportQualityScore}%</b></span>}
+                                </div>
+                              </div>
+                            ) : (
+                              <div
+                                style={{
+                                  background: '#fafbfa',
+                                  border: '1px dashed #d5dbd3',
+                                  borderRadius: 6,
+                                  padding: '8px 12px',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'space-between',
+                                  gap: 8,
+                                  margin: '2px 0',
+                                }}
+                              >
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: '#687566' }}>
+                                  <Sparkles size={13} style={{ color: '#557e50' }} />
+                                  <span>Pending DeepSeek AI scan &amp; rubric scoring.</span>
+                                </div>
+                                <button
+                                  type="button"
+                                  className="button secondary small-button"
+                                  style={{ padding: '3px 10px', fontSize: 10.5 }}
+                                  onClick={() => void handleAnalyzeDocWithAi(doc)}
+                                  disabled={analyzingDocId === doc.id}
+                                >
+                                  {analyzingDocId === doc.id ? (
+                                    <>
+                                      <RefreshCw size={11} className="spin" /> Scanning...
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Sparkles size={11} /> ⚡ Scan with AI
+                                    </>
+                                  )}
+                                </button>
+                              </div>
                             )}
 
                             {doc.fileName && (
@@ -2861,9 +3350,15 @@ export default function App() {
                                     className="button primary small-button"
                                     onClick={() => {
                                       setReviewingDoc(doc);
-                                      setDocReviewScore(doc.score ?? 88);
-                                      setDocReviewDecision(doc.status === 'verified' ? 'verified' : 'verified');
-                                      setDocReviewFeedback(doc.reviewerFeedback || 'Comprehensive methodology, clear reproduction steps, and sound remediation guidance.');
+                                      setDocReviewScore(doc.aiScore ?? doc.score ?? 88);
+                                      const decision = doc.status === 'verified'
+                                        ? 'verified'
+                                        : (doc.aiVerdict === 'fail' ? 'rejected' : (doc.aiVerdict === 'needs_changes' ? 'needs_changes' : 'verified'));
+                                      setDocReviewDecision(decision);
+                                      setDocReviewFeedback(
+                                        doc.reviewerFeedback ||
+                                        (doc.aiSummary ? `[AI Evaluation: ${doc.aiScore}/100] ${doc.aiSummary}` : 'Comprehensive methodology, clear reproduction steps, and sound remediation guidance.')
+                                      );
                                       setModal('review-document');
                                     }}
                                   >
@@ -4564,6 +5059,122 @@ export default function App() {
                   </div>
                 )}
 
+                {/* DeepSeek AI Scoring & Proofing Assistant Card */}
+                <div
+                  style={{
+                    background: 'linear-gradient(135deg, #f7faf5 0%, #edf6eb 100%)',
+                    border: '1px solid #c2dec0',
+                    borderRadius: 8,
+                    padding: '12px 14px',
+                    margin: '10px 0',
+                    boxShadow: '0 1px 4px rgba(35, 75, 30, 0.06)',
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8, marginBottom: 6 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <div style={{ background: '#275825', color: '#fff', borderRadius: 6, padding: '4px 8px', fontSize: 10.5, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4 }}>
+                        <Sparkles size={12} /> DEEPSEEK AI EVALUATION
+                      </div>
+                      {reviewingDoc.aiScore !== undefined && (
+                        <span style={{ font: '700 13px "DM Mono"', color: '#1f4e24' }}>
+                          Score: {reviewingDoc.aiScore} / 100 · {(reviewingDoc.aiVerdict || 'pass').replace('_', ' ').toUpperCase()}
+                        </span>
+                      )}
+                    </div>
+
+                    {reviewingDoc.aiScore !== undefined ? (
+                      <button
+                        type="button"
+                        className="button primary small-button"
+                        style={{
+                          background: '#2f6b36',
+                          fontSize: 10.5,
+                          padding: '4px 10px',
+                        }}
+                        onClick={handleApplyAiEvaluation}
+                        title="Auto-fill the rubric slider, decision, and feedback below using DeepSeek AI evaluation"
+                      >
+                        <Sparkles size={11} /> ✨ Apply AI Evaluation to Form
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        className="button secondary small-button"
+                        style={{ fontSize: 10.5, padding: '4px 10px' }}
+                        onClick={() => void handleAnalyzeDocWithAi(reviewingDoc)}
+                        disabled={analyzingDocId === reviewingDoc.id}
+                      >
+                        {analyzingDocId === reviewingDoc.id ? (
+                          <>
+                            <RefreshCw size={11} className="spin" /> Analyzing with DeepSeek...
+                          </>
+                        ) : (
+                          <>
+                            <Sparkles size={11} /> ⚡ Run AI Analysis Now
+                          </>
+                        )}
+                      </button>
+                    )}
+                  </div>
+
+                  {reviewingDoc.aiScore !== undefined ? (
+                    <>
+                      {reviewingDoc.aiSummary && (
+                        <p style={{ margin: '4px 0 8px', fontSize: 11.5, color: '#334832', lineHeight: 1.5 }}>
+                          <strong>Executive Summary:</strong> {reviewingDoc.aiSummary}
+                        </p>
+                      )}
+
+                      {/* 5-Dimensional Metric Bars */}
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 6, margin: '8px 0' }}>
+                        {[
+                          { label: 'Methodology', val: reviewingDoc.aiMethodologyScore ?? 85 },
+                          { label: 'Evidence', val: reviewingDoc.aiEvidenceScore ?? 80 },
+                          { label: 'Impact', val: reviewingDoc.aiImpactScore ?? 88 },
+                          { label: 'Remediation', val: reviewingDoc.aiRemediationScore ?? 78 },
+                          { label: 'Report Quality', val: reviewingDoc.aiReportQualityScore ?? 86 },
+                        ].map((m) => (
+                          <div key={m.label} style={{ background: '#fff', padding: '6px 8px', borderRadius: 6, border: '1px solid #d8e5d5' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 9.5, color: '#667764', marginBottom: 3 }}>
+                              <span>{m.label}</span>
+                              <strong style={{ color: '#274b24' }}>{m.val}%</strong>
+                            </div>
+                            <div style={{ height: 4, background: '#e2ede0', borderRadius: 2, overflow: 'hidden' }}>
+                              <div style={{ width: `${m.val}%`, height: '100%', background: m.val >= 80 ? '#2f6b36' : (m.val >= 65 ? '#c4872b' : '#b23d2e'), borderRadius: 2 }} />
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+
+                      {reviewingDoc.aiStrengths && reviewingDoc.aiStrengths.length > 0 && (
+                        <div style={{ marginTop: 6 }}>
+                          <span style={{ fontSize: 10, fontWeight: 700, color: '#274b24', textTransform: 'uppercase' }}>Key Strengths:</span>
+                          <ul style={{ margin: '2px 0 0', paddingLeft: 16, fontSize: 10.5, color: '#445742', lineHeight: 1.4 }}>
+                            {reviewingDoc.aiStrengths.map((s, i) => (
+                              <li key={i}>{s}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+
+                      {reviewingDoc.aiRecommendations && reviewingDoc.aiRecommendations.length > 0 && (
+                        <div style={{ marginTop: 6 }}>
+                          <span style={{ fontSize: 10, fontWeight: 700, color: '#825819', textTransform: 'uppercase' }}>Recommended Improvements:</span>
+                          <ul style={{ margin: '2px 0 0', paddingLeft: 16, fontSize: 10.5, color: '#5b5037', lineHeight: 1.4 }}>
+                            {reviewingDoc.aiRecommendations.map((r, i) => (
+                              <li key={i}>{r}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    <p style={{ margin: '4px 0 0', fontSize: 11, color: '#687766' }}>
+                      Click &quot;Run AI Analysis Now&quot; to automatically evaluate the document across 5 cybersecurity rubrics and generate tailored recommendations.
+                    </p>
+                  )}
+                </div>
+
                 <div className="form-grid" style={{ marginTop: 8 }}>
                   <label className="span-two">
                     Reviewer Rubric Score (0 – 100)
@@ -4633,6 +5244,205 @@ export default function App() {
                   </button>
                 </div>
               </>
+            ) : modal === 'ai-proofing-detail' && aiDetailDoc ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                <div className="review-summary" style={{ marginBottom: 4, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                    <div className={`avatar ${aiDetailDoc.candidateName.includes('Ananya') ? 'peach' : 'blue'}`}>
+                      {aiDetailDoc.candidateName.split(' ').map((x) => x[0]).join('')}
+                    </div>
+                    <div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <strong style={{ fontSize: 14, color: '#1f2e1d' }}>{aiDetailDoc.title}</strong>
+                        <span className={`severity ${aiDetailDoc.severity.toLowerCase()}`}>
+                          {aiDetailDoc.severity}
+                        </span>
+                      </div>
+                      <p style={{ margin: '2px 0 0', fontSize: 11, color: '#687564' }}>
+                        By <b>{aiDetailDoc.candidateName}</b> · {aiDetailDoc.lab} · Uploaded {aiDetailDoc.submittedAt || 'Recently'}
+                      </p>
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span className="demo-chip" style={{ background: '#eaf4e6', color: '#255422', borderColor: '#c7dec0' }}>
+                      DEEPSEEK AUDIT
+                    </span>
+                  </div>
+                </div>
+
+                {/* Score & Verdict Banner */}
+                <div
+                  style={{
+                    background: 'linear-gradient(135deg, #f7faf5 0%, #edf6eb 100%)',
+                    border: '1px solid #c2dec0',
+                    borderRadius: 10,
+                    padding: '16px 20px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: 16,
+                    flexWrap: 'wrap',
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+                    <div
+                      style={{
+                        width: 68,
+                        height: 68,
+                        borderRadius: '50%',
+                        background: (aiDetailDoc.aiScore ?? 80) >= 80 ? '#275825' : ((aiDetailDoc.aiScore ?? 80) >= 65 ? '#99631d' : '#8f291c'),
+                        color: '#fff',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        boxShadow: '0 4px 12px rgba(39, 88, 37, 0.25)',
+                      }}
+                    >
+                      <strong style={{ fontSize: 22, lineHeight: 1, fontFamily: 'DM Mono' }}>{aiDetailDoc.aiScore ?? 85}</strong>
+                      <span style={{ fontSize: 8.5, opacity: 0.9, marginTop: 2 }}>/ 100</span>
+                    </div>
+                    <div>
+                      <span style={{ fontSize: 10, color: '#6a7866', fontFamily: 'DM Mono', textTransform: 'uppercase' }}>AI PROOFING VERDICT</span>
+                      <h3 style={{ margin: '2px 0 0', fontSize: 17, fontWeight: 700, color: '#1f4e24', textTransform: 'uppercase' }}>
+                        {(aiDetailDoc.aiVerdict || 'pass').replace('_', ' ')}
+                      </h3>
+                      <p style={{ margin: '2px 0 0', fontSize: 11, color: '#566652' }}>
+                        Scanned across 5 cybersecurity methodology rubrics
+                      </p>
+                    </div>
+                  </div>
+
+                  {role === 'Reviewer' && (
+                    <button
+                      type="button"
+                      className="button primary small-button"
+                      style={{ padding: '8px 14px', fontSize: 11.5 }}
+                      onClick={() => {
+                        setReviewingDoc(aiDetailDoc);
+                        setDocReviewScore(aiDetailDoc.aiScore ?? 85);
+                        const decision =
+                          aiDetailDoc.aiVerdict === 'fail'
+                            ? 'rejected'
+                            : aiDetailDoc.aiVerdict === 'needs_changes'
+                            ? 'needs_changes'
+                            : 'verified';
+                        setDocReviewDecision(decision);
+                        setDocReviewFeedback(
+                          `[DeepSeek AI Evaluation: ${aiDetailDoc.aiScore}/100]\n${aiDetailDoc.aiSummary || ''}\n\nStrengths:\n${(aiDetailDoc.aiStrengths || []).map(s => `• ${s}`).join('\n')}\n\nRecommendations:\n${(aiDetailDoc.aiRecommendations || []).map(r => `• ${r}`).join('\n')}`
+                        );
+                        setModal('review-document');
+                      }}
+                    >
+                      <Sliders size={13} /> Open Review Form with AI Pre-fill
+                    </button>
+                  )}
+                </div>
+
+                {/* Executive Summary */}
+                {aiDetailDoc.aiSummary && (
+                  <div className="objective-box" style={{ background: '#fff', border: '1px solid #dce5da' }}>
+                    <strong style={{ fontSize: 11.5, color: '#274b24', textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                      Executive Evaluation Summary
+                    </strong>
+                    <p style={{ margin: '6px 0 0', fontSize: 12, lineHeight: 1.55, color: '#384836' }}>
+                      {aiDetailDoc.aiSummary}
+                    </p>
+                  </div>
+                )}
+
+                {/* 5-Dimensional Competency Progress Bars */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10 }}>
+                  {[
+                    { label: 'Testing Methodology', val: aiDetailDoc.aiMethodologyScore ?? 85, desc: 'Logical scoping & systematic steps' },
+                    { label: 'Technical Evidence', val: aiDetailDoc.aiEvidenceScore ?? 80, desc: 'HTTP requests, payloads & logs' },
+                    { label: 'Business Impact', val: aiDetailDoc.aiImpactScore ?? 88, desc: 'Risk articulation & CVSS alignment' },
+                    { label: 'Remediation Quality', val: aiDetailDoc.aiRemediationScore ?? 78, desc: 'Soundness of technical patches' },
+                    { label: 'Report Quality', val: aiDetailDoc.aiReportQualityScore ?? 86, desc: 'Clarity, conciseness & format' },
+                  ].map((dim) => (
+                    <div key={dim.label} style={{ background: '#fff', border: '1px solid #e1e8df', borderRadius: 8, padding: '10px 12px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                        <strong style={{ fontSize: 11, color: '#273824' }}>{dim.label}</strong>
+                        <span style={{ fontSize: 12, fontWeight: 700, fontFamily: 'DM Mono', color: '#1f4e24' }}>{dim.val}%</span>
+                      </div>
+                      <div style={{ height: 6, background: '#e5eee3', borderRadius: 3, overflow: 'hidden', margin: '6px 0 4px' }}>
+                        <div
+                          style={{
+                            width: `${dim.val}%`,
+                            height: '100%',
+                            background: dim.val >= 80 ? '#2f6b36' : (dim.val >= 65 ? '#c4872b' : '#b23d2e'),
+                            borderRadius: 3,
+                          }}
+                        />
+                      </div>
+                      <span style={{ fontSize: 9.5, color: '#778875' }}>{dim.desc}</span>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Strengths & Weaknesses 2-Column Grid */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 12 }}>
+                  <div style={{ background: '#f8fbf7', border: '1px solid #d4e5d1', borderRadius: 8, padding: '12px 14px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#275825', marginBottom: 8 }}>
+                      <Check size={14} />
+                      <strong style={{ fontSize: 12, textTransform: 'uppercase' }}>Observed Strengths</strong>
+                    </div>
+                    <ul style={{ margin: 0, paddingLeft: 18, fontSize: 11.5, color: '#3d503b', lineHeight: 1.5 }}>
+                      {(aiDetailDoc.aiStrengths && aiDetailDoc.aiStrengths.length > 0
+                        ? aiDetailDoc.aiStrengths
+                        : ['Systematic vulnerability identification and scope clarity', 'Well-defined testing steps and impact awareness']
+                      ).map((s, i) => (
+                        <li key={i} style={{ marginBottom: 4 }}>{s}</li>
+                      ))}
+                    </ul>
+                  </div>
+
+                  <div style={{ background: '#fcfaf6', border: '1px solid #eadecb', borderRadius: 8, padding: '12px 14px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#a06e1f', marginBottom: 8 }}>
+                      <AlertTriangle size={14} />
+                      <strong style={{ fontSize: 12, textTransform: 'uppercase' }}>Areas for Hardening</strong>
+                    </div>
+                    <ul style={{ margin: 0, paddingLeft: 18, fontSize: 11.5, color: '#564d39', lineHeight: 1.5 }}>
+                      {(aiDetailDoc.aiWeaknesses && aiDetailDoc.aiWeaknesses.length > 0
+                        ? aiDetailDoc.aiWeaknesses
+                        : ['Could provide additional automated regression verification scripts', 'Remediation advice can include defense-in-depth architecture']
+                      ).map((w, i) => (
+                        <li key={i} style={{ marginBottom: 4 }}>{w}</li>
+                      ))}
+                    </ul>
+                  </div>
+                </div>
+
+                {/* Actionable Recommendations */}
+                {aiDetailDoc.aiRecommendations && aiDetailDoc.aiRecommendations.length > 0 && (
+                  <div style={{ background: '#fff', border: '1px solid #dde5db', borderRadius: 8, padding: '12px 14px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#274b24', marginBottom: 6 }}>
+                      <Sparkles size={14} />
+                      <strong style={{ fontSize: 12, textTransform: 'uppercase' }}>Actionable Recommendations for Candidate</strong>
+                    </div>
+                    <ul style={{ margin: 0, paddingLeft: 18, fontSize: 11.5, color: '#445642', lineHeight: 1.5 }}>
+                      {aiDetailDoc.aiRecommendations.map((r, i) => (
+                        <li key={i} style={{ marginBottom: 4 }}>{r}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                <div className="modal-actions" style={{ marginTop: 8 }}>
+                  <button type="button" className="button secondary" onClick={() => setModal('')}>
+                    Close
+                  </button>
+                  {aiDetailDoc.fileName && (
+                    <button
+                      type="button"
+                      className="button secondary"
+                      onClick={() => void handleViewDoc(aiDetailDoc)}
+                    >
+                      <Eye size={13} /> View Attached Document
+                    </button>
+                  )}
+                </div>
+              </div>
             ) : modal === 'view-document' && viewingDocPreview ? (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
                 <div className="review-summary" style={{ marginBottom: 4, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
