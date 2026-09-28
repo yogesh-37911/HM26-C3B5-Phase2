@@ -13,10 +13,10 @@ Central landing file for reviewers. Fill in or update external hash placeholders
 - **Live demo URL:** <https://proofforge-cyber.onrender.com/>
 - **GitHub repository URL:** <https://github.com/yogesh-37911/HM26-C3B5-Phase2.git>
 
-- **Demo video URL:** <https://drive.google.com/file/d/16kWqYlZ_fBdNwJdhd94OpU_n1LBbzVov/view?usp=sharing>
-- **Demo video SHA-256:** `221C75950502E980`
+- **Demo video URL:** <https://drive.google.com/file/d/17zF11dDkL_vPw3fLtL8MN7GM5_JDx24h/view?usp=sharing>
+- **Demo video SHA-256:** `AA68E1C9F17F73046`
 
-- **Coding walkthrough video URL:** <https://drive.google.com/file/d/1VwVIOggA6NNcUzzjod6ORfyG-Co2sZ5B/view?usp=sharing>
+- **Coding walkthrough video URL:** <https://drive.google.com/file/d/1eUeJ94X76hjlEbrEkzCA5qeq-aDR0_Gt/view?usp=sharing>
 - **Coding walkthrough SHA-256:** `1FD219131257227B`
 
 - **Decision log PDF:** <https://drive.google.com/file/d/1MWb_AXmuSPj0-ugp2L-rZsNaNytP0QKs/view?usp=sharing>
